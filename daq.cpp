@@ -20,6 +20,8 @@ Daq::Daq()
 	//ifB1 = 4;
 	//ifB2 = 5;
 
+	taskHandleLens = 0;
+	lensVoltage = 0.0;
 
 }
 
@@ -34,6 +36,9 @@ void Daq::configure()
 	DAQmxCreateAOVoltageChan(taskHandleY, "Dev1/ao1", "", -10.0, 10.0, DAQmx_Val_Volts, "");
 	DAQmxCreateDOChan(taskHandleDig, "Dev1/port0/line0:7", "", DAQmx_Val_ChanForAllLines);
 
+	DAQmxCreateTask("", &taskHandleLens);
+	// Creates a single task spanning both ao3 and ao4, restricted to 0-10V
+	DAQmxCreateAOVoltageChan(taskHandleLens, "Dev1/ao2,Dev1/ao3", "", 0.0, 10.0, DAQmx_Val_Volts, "");
 }
 
 void Daq::start()
@@ -42,6 +47,7 @@ void Daq::start()
 	DAQmxStartTask(taskHandleX);
 	DAQmxStartTask(taskHandleY);
 	DAQmxStartTask(taskHandleDig);
+	DAQmxStartTask(taskHandleLens);
 }
 
 void Daq::startTrigger()
@@ -242,3 +248,19 @@ void Daq::MoveUp()
 	//thetay -= 0.1;
 	thetay -= GALVO_STEP_SIZE;
 }
+
+void Daq::writeLens()
+{
+	// Safety clamp: TR-CL180 requires 0V to 10V 
+	if (lensVoltage < 0.0) lensVoltage = 0.0;
+	if (lensVoltage > 10.0) lensVoltage = 10.0;
+
+	// Send identical voltage to AO3 and AO4
+	float64 lensData[2] = { lensVoltage, lensVoltage };
+	DAQmxWriteAnalogF64(taskHandleLens, 1, 1, 10.0, DAQmx_Val_GroupByChannel, lensData, NULL, NULL);
+}
+
+void Daq::MoveFocusUp() { lensVoltage += 0.1; writeLens(); }
+void Daq::MoveFocusDown() { lensVoltage -= 0.1; writeLens(); }
+void Daq::FocusMin() { lensVoltage = 0.0; writeLens(); }
+void Daq::FocusMax() { lensVoltage = 10.0; writeLens(); }

@@ -23,6 +23,9 @@ private:
 	//uInt8		ifB1;
 	//uInt8		ifB2;
 
+	TaskHandle taskHandleLens;
+	float64 lensVoltage;
+
 public:
 	Daq();
 	void reset();
@@ -44,6 +47,11 @@ public:
 	void MoveUp();
 	void MoveDown();
 	//void PollLensPosition();
+	void writeLens();
+	void MoveFocusUp();
+	void MoveFocusDown();
+	void FocusMin();
+	void FocusMax();
 };
 
 #endif

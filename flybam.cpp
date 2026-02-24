@@ -1030,11 +1030,11 @@ int _tmain(int argc, _TCHAR* argv[])
 			//int z_base_key_state = 0;
 			//int z_track_key_state = 0;
 
-			//int inc_foc_state = 0;
-			//int dec_foc_state = 0;
+			int inc_foc_state = 0;
+			int dec_foc_state = 0;
 
-			//int max_foc_state = 0;
-			//int min_foc_state = 0;
+			int max_foc_state = 0;
+			int min_foc_state = 0;
 			
 			int reset_galvo_state = 0;
 
@@ -1121,6 +1121,33 @@ int _tmain(int argc, _TCHAR* argv[])
 				//}
 				//else
 				//	min_foc_state = 0;
+				// Numpad 1: Decrease Focus
+				if (GetAsyncKeyState(VK_NUMPAD1)) {
+					if (!inc_foc_state) ndq.MoveFocusDown();
+					inc_foc_state = 1;
+				}
+				else inc_foc_state = 0;
+
+				// Numpad 2: Increase Focus
+				if (GetAsyncKeyState(VK_NUMPAD2)) {
+					if (!dec_foc_state) ndq.MoveFocusUp();
+					dec_foc_state = 1;
+				}
+				else dec_foc_state = 0;
+
+				// Numpad 4: Minimum Focus (0V)
+				if (GetAsyncKeyState(VK_NUMPAD4)) {
+					if (!max_foc_state) ndq.FocusMin();
+					max_foc_state = 1;
+				}
+				else max_foc_state = 0;
+
+				// Numpad 5: Maximum Focus (10V)
+				if (GetAsyncKeyState(VK_NUMPAD5)) {
+					if (!min_foc_state) ndq.FocusMax();
+					min_foc_state = 1;
+				}
+				else min_foc_state = 0;
 
 				if (GetAsyncKeyState(VK_TAB))
 				{
