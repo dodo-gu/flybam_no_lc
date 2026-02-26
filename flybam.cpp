@@ -1033,10 +1033,18 @@ int _tmain(int argc, _TCHAR* argv[])
 			int inc_foc_state = 0;
 			int dec_foc_state = 0;
 
-			int max_foc_state = 0;
-			int min_foc_state = 0;
+			//int max_foc_state = 0;
+			//int min_foc_state = 0;
 			
 			int reset_galvo_state = 0;
+
+			int fine_up_state = 0;
+			int fine_down_state = 0;
+			int coarse_up_state = 0;
+			int coarse_down_state = 0;
+			int min_state = 0;
+			int max_state = 0;
+			int center_state = 0;
 
 			while (true)
 			{
@@ -1135,19 +1143,45 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 				else dec_foc_state = 0;
 
-				// Numpad 4: Minimum Focus (0V)
-				if (GetAsyncKeyState(VK_NUMPAD4)) {
-					if (!max_foc_state) ndq.FocusMin();
-					max_foc_state = 1;
+				if (GetAsyncKeyState(VK_NUMPAD4))
+				{
+					if (!coarse_down_state) ndq.MoveFocusCoarseDown();
+					coarse_down_state = 1;
 				}
-				else max_foc_state = 0;
+				else coarse_down_state = 0;
 
-				// Numpad 5: Maximum Focus (10V)
-				if (GetAsyncKeyState(VK_NUMPAD5)) {
-					if (!min_foc_state) ndq.FocusMax();
-					min_foc_state = 1;
+				// Numpad 5: Coarse Up
+				if (GetAsyncKeyState(VK_NUMPAD5))
+				{
+					if (!coarse_up_state) ndq.MoveFocusCoarseUp();
+					coarse_up_state = 1;
 				}
-				else min_foc_state = 0;
+				else coarse_up_state = 0;
+
+				// --- Presets ---
+				// Numpad 7: Min (0V)
+				if (GetAsyncKeyState(VK_NUMPAD7))
+				{
+					if (!min_state) ndq.FocusMin();
+					min_state = 1;
+				}
+				else min_state = 0;
+
+				// Numpad 8: Center (5V)
+				if (GetAsyncKeyState(VK_NUMPAD8))
+				{
+					if (!center_state) ndq.FocusCenter();
+					center_state = 1;
+				}
+				else center_state = 0;
+
+				// Numpad 9: Max (10V)
+				if (GetAsyncKeyState(VK_NUMPAD9))
+				{
+					if (!max_state) ndq.FocusMax();
+					max_state = 1;
+				}
+				else max_state = 0;
 
 				if (GetAsyncKeyState(VK_TAB))
 				{

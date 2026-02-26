@@ -48,10 +48,16 @@ public:
 	void MoveDown();
 	//void PollLensPosition();
 	void writeLens();
+	// Fine Adjustment (0.1V)
 	void MoveFocusUp();
 	void MoveFocusDown();
-	void FocusMin();
-	void FocusMax();
+	// Coarse Adjustment (1.0V) 
+	void MoveFocusCoarseUp();
+	void MoveFocusCoarseDown();
+	// Presets
+	void FocusMin();    // 0V
+	void FocusMax();    // 10V
+	void FocusCenter(); // 5V
 };
 
 #endif

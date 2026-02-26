@@ -260,7 +260,47 @@ void Daq::writeLens()
 	DAQmxWriteAnalogF64(taskHandleLens, 1, 1, 10.0, DAQmx_Val_GroupByChannel, lensData, NULL, NULL);
 }
 
-void Daq::MoveFocusUp() { lensVoltage += 0.1; writeLens(); }
-void Daq::MoveFocusDown() { lensVoltage -= 0.1; writeLens(); }
-void Daq::FocusMin() { lensVoltage = 0.0; writeLens(); }
-void Daq::FocusMax() { lensVoltage = 10.0; writeLens(); }
+// --- Fine Control (0.1V) ---
+void Daq::MoveFocusUp()
+{
+	lensVoltage += 0.1;
+	writeLens();
+}
+
+void Daq::MoveFocusDown()
+{
+	lensVoltage -= 0.1;
+	writeLens();
+}
+
+// --- Coarse Control (1.0V) ---
+void Daq::MoveFocusCoarseUp()
+{
+	lensVoltage += 1.0;
+	writeLens();
+}
+
+void Daq::MoveFocusCoarseDown()
+{
+	lensVoltage -= 1.0;
+	writeLens();
+}
+
+// --- Presets ---
+void Daq::FocusMin()
+{
+	lensVoltage = 0.0;
+	writeLens();
+}
+
+void Daq::FocusMax()
+{
+	lensVoltage = 10.0;
+	writeLens();
+}
+
+void Daq::FocusCenter()
+{
+	lensVoltage = 5.0;
+	writeLens();
+}
