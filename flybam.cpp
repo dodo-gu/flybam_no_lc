@@ -295,7 +295,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	printf("[OK]\n");
 
 	// water-moat arena
-	Point el_center(254, 237);
+	Point el_center(254, 229);
 	int el_maj_axis = 197, el_min_axis = 120;
 	int el_angle = 0;
 
@@ -311,7 +311,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	// thresholds for fly-view image at 0.1A power
 	int arena_thresh = 55;
-	int fly_thresh = 100;
+	int fly_thresh = 110;
 
 	int fly_erode = 0;
 	int fly_dilate = 3;
@@ -1143,6 +1143,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 				else dec_foc_state = 0;
 
+				// Numpad 4:  Decrease Focus Coarse
 				if (GetAsyncKeyState(VK_NUMPAD4))
 				{
 					if (!coarse_down_state) ndq.MoveFocusCoarseDown();
@@ -1150,7 +1151,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 				else coarse_down_state = 0;
 
-				// Numpad 5: Coarse Up
+				// Numpad 5:  Increase Focus Coarse
 				if (GetAsyncKeyState(VK_NUMPAD5))
 				{
 					if (!coarse_up_state) ndq.MoveFocusCoarseUp();
