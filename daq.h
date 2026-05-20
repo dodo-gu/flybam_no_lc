@@ -24,7 +24,8 @@ private:
 	//uInt8		ifB2;
 
 	TaskHandle taskHandleLens;
-	float64 lensVoltage;
+	float64 lensVoltage1; // Voltage for ao2
+	float64 lensVoltage2; // Voltage for ao3
 
 public:
 	Daq();
@@ -48,12 +49,12 @@ public:
 	void MoveDown();
 	//void PollLensPosition();
 	void writeLens();
-	// Fine Adjustment (0.1V)
-	void MoveFocusUp();
-	void MoveFocusDown();
-	// Coarse Adjustment (1.0V) 
-	void MoveFocusCoarseUp();
-	void MoveFocusCoarseDown();
+	// Lens 1 Fine Adjustment (ao2)
+	void MoveFocus1Up();
+	void MoveFocus1Down();
+	// Lens 2 Fine Adjustment (ao3)
+	void MoveFocus2Up();
+	void MoveFocus2Down();
 	// Presets
 	void FocusMin();    // 0V
 	void FocusMax();    // 10V

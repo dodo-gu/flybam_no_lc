@@ -1030,18 +1030,12 @@ int _tmain(int argc, _TCHAR* argv[])
 			//int z_base_key_state = 0;
 			//int z_track_key_state = 0;
 
-			int inc_foc_state = 0;
-			int dec_foc_state = 0;
+			int inc_foc1_state = 0;
+			int dec_foc1_state = 0;
+			int inc_foc2_state = 0;
+			int dec_foc2_state = 0;
 
-			//int max_foc_state = 0;
-			//int min_foc_state = 0;
-			
-			int reset_galvo_state = 0;
-
-			int fine_up_state = 0;
-			int fine_down_state = 0;
-			int coarse_up_state = 0;
-			int coarse_down_state = 0;
+			int reset_galvo_state = 0;;
 			int min_state = 0;
 			int max_state = 0;
 			int center_state = 0;
@@ -1130,34 +1124,35 @@ int _tmain(int argc, _TCHAR* argv[])
 				//else
 				//	min_foc_state = 0;
 				// Numpad 1: Decrease Focus
+				// Numpad 1: Decrease Focus Lens 1 (ao2)
 				if (GetAsyncKeyState(VK_NUMPAD1)) {
-					if (!inc_foc_state) ndq.MoveFocusDown();
-					inc_foc_state = 1;
+					if (!inc_foc1_state) ndq.MoveFocus1Down();
+					inc_foc1_state = 1;
 				}
-				else inc_foc_state = 0;
+				else inc_foc1_state = 0;
 
-				// Numpad 2: Increase Focus
+				// Numpad 2: Increase Focus Lens 1 (ao2)
 				if (GetAsyncKeyState(VK_NUMPAD2)) {
-					if (!dec_foc_state) ndq.MoveFocusUp();
-					dec_foc_state = 1;
+					if (!dec_foc1_state) ndq.MoveFocus1Up();
+					dec_foc1_state = 1;
 				}
-				else dec_foc_state = 0;
+				else dec_foc1_state = 0;
 
-				// Numpad 4:  Decrease Focus Coarse
+				// Numpad 4: Decrease Focus Lens 2 (ao3)
 				if (GetAsyncKeyState(VK_NUMPAD4))
 				{
-					if (!coarse_down_state) ndq.MoveFocusCoarseDown();
-					coarse_down_state = 1;
+					if (!inc_foc2_state) ndq.MoveFocus2Down();
+					inc_foc2_state = 1;
 				}
-				else coarse_down_state = 0;
+				else inc_foc2_state = 0;
 
-				// Numpad 5:  Increase Focus Coarse
+				// Numpad 5: Increase Focus Lens 2 (ao3)
 				if (GetAsyncKeyState(VK_NUMPAD5))
 				{
-					if (!coarse_up_state) ndq.MoveFocusCoarseUp();
-					coarse_up_state = 1;
+					if (!dec_foc2_state) ndq.MoveFocus2Up();
+					dec_foc2_state = 1;
 				}
-				else coarse_up_state = 0;
+				else dec_foc2_state = 0;
 
 				// --- Presets ---
 				// Numpad 7: Min (0V)

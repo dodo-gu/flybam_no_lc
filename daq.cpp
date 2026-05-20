@@ -21,8 +21,8 @@ Daq::Daq()
 	//ifB2 = 5;
 
 	taskHandleLens = 0;
-	lensVoltage = 0.0;
-
+	lensVoltage1 = 0.0;
+	lensVoltage2 = 0.0;
 }
 
 void Daq::configure()
@@ -251,56 +251,62 @@ void Daq::MoveUp()
 
 void Daq::writeLens()
 {
-	// Safety clamp: TR-CL180 requires 0V to 10V 
-	if (lensVoltage < 0.0) lensVoltage = 0.0;
-	if (lensVoltage > 10.0) lensVoltage = 10.0;
+	// Safety clamp for Lens 1 (ao2)
+	if (lensVoltage1 < 0.0) lensVoltage1 = 0.0;
+	if (lensVoltage1 > 10.0) lensVoltage1 = 10.0;
 
-	// Send identical voltage to AO3 and AO4
-	float64 lensData[2] = { lensVoltage, lensVoltage };
+	// Safety clamp for Lens 2 (ao3)
+	if (lensVoltage2 < 0.0) lensVoltage2 = 0.0;
+	if (lensVoltage2 > 10.0) lensVoltage2 = 10.0;
+
+	// Send independent voltages: array[0] -> ao2, array[1] -> ao3
+	float64 lensData[2] = { lensVoltage1, lensVoltage2 };
 	DAQmxWriteAnalogF64(taskHandleLens, 1, 1, 10.0, DAQmx_Val_GroupByChannel, lensData, NULL, NULL);
 }
 
-// --- Fine Control (0.1V) ---
-void Daq::MoveFocusUp()
+// --- Lens 1 (ao2) Fine Control (0.1V) ---
+void Daq::MoveFocus1Up()
 {
-	lensVoltage += 0.1;
+	lensVoltage1 += 0.1;
 	writeLens();
 }
 
-void Daq::MoveFocusDown()
+void Daq::MoveFocus1Down()
 {
-	lensVoltage -= 0.1;
+	lensVoltage1 -= 0.1;
 	writeLens();
 }
 
-// --- Coarse Control (1.0V) ---
-void Daq::MoveFocusCoarseUp()
+// --- Lens 2 (ao3) Fine Control (0.1V) ---
+void Daq::MoveFocus2Up()
 {
-	lensVoltage += 1.0;
+	lensVoltage2 += 0.1;
 	writeLens();
 }
 
-void Daq::MoveFocusCoarseDown()
+void Daq::MoveFocus2Down()
 {
-	lensVoltage -= 1.0;
+	lensVoltage2 -= 0.1;
 	writeLens();
 }
-
-// --- Presets ---
+// --- Presets (Applies to both) ---
 void Daq::FocusMin()
 {
-	lensVoltage = 0.0;
+	lensVoltage1 = 0.0;
+	lensVoltage2 = 0.0;
 	writeLens();
 }
 
 void Daq::FocusMax()
 {
-	lensVoltage = 10.0;
+	lensVoltage1 = 10.0;
+	lensVoltage2 = 10.0;
 	writeLens();
 }
 
 void Daq::FocusCenter()
 {
-	lensVoltage = 5.0;
+	lensVoltage1 = 5.0;
+	lensVoltage2 = 5.0;
 	writeLens();
 }
