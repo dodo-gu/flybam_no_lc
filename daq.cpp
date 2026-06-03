@@ -289,6 +289,21 @@ void Daq::MoveFocus2Down()
 	lensVoltage2 -= 0.1;
 	writeLens();
 }
+
+// --- Control BOTH Lenses (0.1V) ---
+void Daq::MoveBothFocusUp()
+{
+	lensVoltage1 += 0.1;
+	lensVoltage2 += 0.1;
+	writeLens();
+}
+
+void Daq::MoveBothFocusDown()
+{
+	lensVoltage1 -= 0.1;
+	lensVoltage2 -= 0.1;
+	writeLens();
+}
 // --- Presets (Applies to both) ---
 void Daq::FocusMin()
 {

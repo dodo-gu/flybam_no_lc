@@ -55,6 +55,9 @@ public:
 	// Lens 2 Fine Adjustment (ao3)
 	void MoveFocus2Up();
 	void MoveFocus2Down();
+
+	void MoveBothFocusUp();
+	void MoveBothFocusDown();
 	// Presets
 	void FocusMin();    // 0V
 	void FocusMax();    // 10V

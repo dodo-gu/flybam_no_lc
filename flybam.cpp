@@ -1123,22 +1123,21 @@ int _tmain(int argc, _TCHAR* argv[])
 				//}
 				//else
 				//	min_foc_state = 0;
-				// Numpad 1: Decrease Focus
-				// Numpad 1: Decrease Focus Lens 1 (ao2)
+				// Numpad 1: Decrease Focus BOTH (ao2 and ao3)
 				if (GetAsyncKeyState(VK_NUMPAD1)) {
-					if (!inc_foc1_state) ndq.MoveFocus1Down();
+					if (!inc_foc1_state) ndq.MoveBothFocusDown();
 					inc_foc1_state = 1;
 				}
 				else inc_foc1_state = 0;
 
-				// Numpad 2: Increase Focus Lens 1 (ao2)
+				// Numpad 2: Increase Focus BOTH (ao2 and ao3)
 				if (GetAsyncKeyState(VK_NUMPAD2)) {
-					if (!dec_foc1_state) ndq.MoveFocus1Up();
+					if (!dec_foc1_state) ndq.MoveBothFocusUp();
 					dec_foc1_state = 1;
 				}
 				else dec_foc1_state = 0;
 
-				// Numpad 4: Decrease Focus Lens 2 (ao3)
+				// Numpad 4: Decrease Focus Lens 2 ONLY (Fluo-view / ao3)
 				if (GetAsyncKeyState(VK_NUMPAD4))
 				{
 					if (!inc_foc2_state) ndq.MoveFocus2Down();
@@ -1146,7 +1145,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 				else inc_foc2_state = 0;
 
-				// Numpad 5: Increase Focus Lens 2 (ao3)
+				// Numpad 5: Increase Focus Lens 2 ONLY (Fluo-view / ao3)
 				if (GetAsyncKeyState(VK_NUMPAD5))
 				{
 					if (!dec_foc2_state) ndq.MoveFocus2Up();
