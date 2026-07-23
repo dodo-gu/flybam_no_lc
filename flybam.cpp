@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include "readerwriterqueue.h"
 
+
+
 using namespace std;
 using namespace FlyCapture2;
 using namespace cv;
@@ -294,14 +296,12 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 	printf("[OK]\n");
 
-	// water-moat arena
-	Point el_center(254, 229);
-	int el_maj_axis = 197, el_min_axis = 120;
-	int el_angle = 0;
+	int pt1_x = 82, pt1_y = 175; 
+	int pt2_x = 300, pt2_y = 74; 
+	int pt3_x = 480, pt3_y = 204; 
+	int pt4_x = 247, pt4_y = 329; 
 
-	//create arena mask
-	Mat outer_mask = Mat::zeros(Size(arena_image_width, arena_image_height), CV_8UC1);
-	ellipse(outer_mask, el_center, Size(el_maj_axis, el_min_axis), el_angle, 0, 360, Scalar(255, 255, 255), FILLED);
+	Mat outer_mask;
 
 	Mat arena_img, arena_frame, arena_mask, arena_bg;
 	Mat fly_img, fly_frame, fly_fg, fly_mask; // Mat fly_img, fly_frame, fly_fg, fly_mask, fly_z_frame;
@@ -388,6 +388,7 @@ int _tmain(int argc, _TCHAR* argv[])
 								// Get the moments and mass centers
 								vector<Moments> fly_mu(fly_contours.size());
 								vector<Point2f> fly_mc(fly_contours.size());
+
 
 								vector<Point2f> bead_ctr_pts;
 								vector<Point2f> bead_pt(NBEADS);
@@ -689,8 +690,17 @@ int _tmain(int argc, _TCHAR* argv[])
 					threshold(arena_mask, arena_mask, arena_thresh, 255, THRESH_BINARY);
 
 					outer_mask = Mat::zeros(Size(arena_image_width, arena_image_height), CV_8UC1);
-					ellipse(outer_mask, el_center, Size(el_maj_axis, el_min_axis), el_angle, 0, 360, Scalar(255, 255, 255), FILLED);
+
+					cv::Point pts[4] = {
+						cv::Point(pt1_x, pt1_y),
+						cv::Point(pt2_x, pt2_y),
+						cv::Point(pt3_x, pt3_y),
+						cv::Point(pt4_x, pt4_y)
+					};
+
+					cv::fillConvexPoly(outer_mask, pts, 4, cv::Scalar(255, 255, 255));
 					arena_mask &= outer_mask;
+
 
 					erode(arena_mask, arena_mask, arena_element, Point(-1, -1), arena_erode);
 					dilate(arena_mask, arena_mask, arena_element, Point(-1, -1), arena_dilate);
@@ -947,34 +957,40 @@ int _tmain(int argc, _TCHAR* argv[])
 			cv::namedWindow("parameters", WINDOW_AUTOSIZE);
 			cv::resizeWindow("parameters", 300, 300);
 
-			cv::createTrackbar("center x", "parameters", &el_center.x, arena_image_width);
-			cv::createTrackbar("center y", "parameters", &el_center.y, arena_image_height);
-			cv::createTrackbar("major axis", "parameters", &el_maj_axis, arena_image_width / 2);
-			cv::createTrackbar("minor axis", "parameters", &el_min_axis, arena_image_height / 2);
-			cv::createTrackbar("angle", "parameters", &el_angle, 180);
-
-			//cv::createTrackbar("center x", "parameters", nullptr, arena_image_width, on_cx_tb);
-			//cv::createTrackbar("center y", "parameters", nullptr, arena_image_height, on_cy_tb);
-			//cv::createTrackbar("major axis", "parameters", nullptr, arena_image_width / 2, on_ma_tb);
-			//cv::createTrackbar("minor axis", "parameters", nullptr, arena_image_height / 2, on_mi_tb);
-			//cv::createTrackbar("angle", "parameters", nullptr, 180, on_ang_tb);
-
-			//cv::setTrackbarPos("center x", "parameters", el_center.x);
-			//cv::setTrackbarPos("center y", "parameters", el_center.y);
-			//cv::setTrackbarPos("major axis", "parameters", el_maj_axis);
-			//cv::setTrackbarPos("minor axis", "parameters", el_min_axis);
-			//cv::setTrackbarPos("angle", "parameters", el_angle);
+			cv::namedWindow("parameters", WINDOW_AUTOSIZE);
+			cv::resizeWindow("parameters", 350, 450);
+			cv::createTrackbar("pt1 X (Top-Left)", "parameters", &pt1_x, arena_image_width);
+			cv::createTrackbar("pt1 Y (Top-Left)", "parameters", &pt1_y, arena_image_height);
+			cv::createTrackbar("pt2 X (Top-Right)", "parameters", &pt2_x, arena_image_width);
+			cv::createTrackbar("pt2 Y (Top-Right)", "parameters", &pt2_y, arena_image_height);
+			cv::createTrackbar("pt3 X (Bot-Right)", "parameters", &pt3_x, arena_image_width);
+			cv::createTrackbar("pt3 Y (Bot-Right)", "parameters", &pt3_y, arena_image_height);
+			cv::createTrackbar("pt4 X (Bot-Left)", "parameters", &pt4_x, arena_image_width);
+			cv::createTrackbar("pt4 Y (Bot-Left)", "parameters", &pt4_y, arena_image_height);
 			
 			Mat tframe, tmask;
 			//Mat tzframe;
 
 			while (true)
 			{
-				if (arenaDispStream.try_dequeue(tframe))
-				{
-					ellipse(tframe, el_center, Size(el_maj_axis, el_min_axis), el_angle, 0, 360, Scalar(255, 255, 255));
+				if (arenaDispStream.try_dequeue(tframe)) {
+					cv::Point pts[4] = {
+						cv::Point(pt1_x, pt1_y),
+						cv::Point(pt2_x, pt2_y),
+						cv::Point(pt3_x, pt3_y),
+						cv::Point(pt4_x, pt4_y)
+					};
+
+					for (int i = 0; i < 4; i++) {
+						cv::line(tframe, pts[i], pts[(i + 1) % 4], cv::Scalar(255, 255, 255), 1);
+						cv::circle(tframe, pts[i], 3, cv::Scalar(0, 0, 255), cv::FILLED);
+						cv::putText(tframe, std::to_string(i + 1), cv::Point(pts[i].x + 8, pts[i].y + 8),
+							cv::FONT_HERSHEY_COMPLEX, 0.4, cv::Scalar(0, 0, 255));
+					}
+
 					imshow("arena image", tframe);
 				}
+
 
 				if (arenaMaskStream.try_dequeue(tmask))
 					imshow("arena mask", tmask);
