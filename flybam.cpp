@@ -1032,6 +1032,110 @@ int _tmain(int argc, _TCHAR* argv[])
 			}
 		}
 
+#pragma omp section 
+		{
+			double cfm = 0.0;
+			double last_fm = 0.0;
+			bool z_track_init = false;
+			int z_state = 0;
+			int dz = 0; // 0 for Down, 1 for Up
+
+			while (true) {
+				if (fmq.try_pop(cfm)) {
+					if (z_track) {
+						if ((z_track_init != z_track) && (base_fm <= 0.0)) {
+							base_fm = cfm;
+						}
+
+						double delta = base_fm - cfm;
+
+						// 4-state focus search state machine
+						switch (z_state) {
+						case 0:
+							if (delta > Z_EPSILON) {
+								dz = rand() % 2; // Random initial direction
+								if (dz == 0) {
+									ndq.MoveBothFocusDown();
+								}
+								else {
+									ndq.MoveBothFocusUp();
+								}
+								z_state = 1;
+								printf("AF: [State 0 -> 1] Defocus %.2f, starting exploration...\n", delta);
+							}
+							break;
+
+						case 1:
+							if (delta > Z_EPSILON) {
+								if (last_fm > cfm) {
+									// Clarity dropped, wrong direction. Reverse with 3x step
+									if (dz == 0) {
+										ndq.MoveBothFocusUp();
+										ndq.MoveBothFocusUp();
+										ndq.MoveBothFocusUp();
+									}
+									else {
+										ndq.MoveBothFocusDown();
+										ndq.MoveBothFocusDown();
+										ndq.MoveBothFocusDown();
+									}
+									z_state = 2;
+									printf("AF: [State 1 -> 2] Wrong direction! Reversing with large step...\n");
+								}
+								else {
+									// Clarity improved, correct direction. Keep going
+									if (dz == 0) {
+										ndq.MoveBothFocusDown();
+									}
+									else {
+										ndq.MoveBothFocusUp();
+									}
+									z_state = 0;
+									printf("AF: [State 1 -> 0] Correct direction, proceeding...\n");
+								}
+							}
+							else {
+								z_state = 0; // Recovered within tolerance
+							}
+							break;
+
+						case 2:
+							if (delta > Z_EPSILON) {
+								if (last_fm > cfm) {
+									if (dz == 0) {
+										ndq.MoveBothFocusDown();
+									}
+									else {
+										ndq.MoveBothFocusUp();
+									}
+								}
+								else {
+									if (dz == 0) {
+										ndq.MoveBothFocusUp();
+									}
+									else {
+										ndq.MoveBothFocusDown();
+									}
+								}
+							}
+							z_state = 0; // Return to monitoring
+							break;
+						}
+					}
+					else {
+						z_state = 0; // Safe reset without clearing base_fm
+					}
+
+					last_fm = cfm;
+					z_track_init = z_track;
+				}
+				else {
+					Sleep(1);
+				}
+				if (!stream) break;
+			}
+		}
+
 		#pragma omp section
 		{
 			int record_key_state = 0;
