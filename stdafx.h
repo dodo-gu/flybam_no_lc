@@ -46,7 +46,7 @@
 #define GALVO_XY_DIST 15.174			//in mm
 #define GALVO_X_MIRROR_ANGLE 15			//in degrees
 //#define GALVO_STEP_SIZE 0.0000075		// doubled the step size to maintain similar manual speed control (due to spectre/meltdown processor slowdown)
-#define GALVO_STEP_SIZE 0.000015		
+#define GALVO_STEP_SIZE 0.00003		
 
 #define XVOLTPERDEGREE 0.51
 #define YVOLTPERDEGREE 0.514
@@ -71,7 +71,10 @@
 
 #define MIN_MARKER_SIZE 10
 #define MAX_MARKER_SIZE 500
-#define NBEADS 3	
+#define NBEADS 3
+
+#define DEFAULT_BASE_FM 20.0
+
 
 //#define Z_PERIOD 50
 //#define Z_EPSILON 5.0

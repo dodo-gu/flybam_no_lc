@@ -168,34 +168,15 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	ndq.startTrigger();
 
-	// init arduino for camera lens control
-	// Serial* SP = new Serial("COM4");    // adjust as needed
+	// Auto Focus control
+	bool z_track = false;
+	double fm = 0.0;
 
-	//if (SP->IsConnected())
-	//{
-	//	printf("Connecting lens controller arduino [OK]\n");
-	//	while (SP->ReadData(serial_buffer, 2) != -1)
-	//	{ }
+	double base_fm = DEFAULT_BASE_FM;
 
-	//	// Query for lens position
-	//	ndq.lensCommand(7);
-
-	//	printf("Reading initial lens position from Arduino ");
-	//	Sleep(2000);
-
-	//	if (SP->ReadData(serial_buffer, 2) != -1)
-	//	{
-	//		lens_pos = (serial_buffer[1] & 0xFF) << 8 | (serial_buffer[0] & 0xFF);
-	//		printf("%d [OK]\n", lens_pos);
-	//	}
-	//	else
-	//		printf("Read failed\n");
-
-	//	// Shutdown Serial
-	//	SP->~Serial();
-	//}
-	//else
-	//	printf("Failed connecting to arduino over serial\n");
+	int z_track_key_state = 0;
+	int z_base_key_state = 0;
+	const double Z_EPSILON = 5.0;
 
 	configFilename = "..\\ccf\\P_GZL-CL-20C5M_Gazelle_240x240.ccf";
 	
@@ -296,10 +277,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 	printf("[OK]\n");
 
-	int pt1_x = 82, pt1_y = 175; 
-	int pt2_x = 300, pt2_y = 74; 
-	int pt3_x = 480, pt3_y = 204; 
-	int pt4_x = 247, pt4_y = 329; 
+	int pt1_x = 69, pt1_y = 231; 
+	int pt2_x = 292, pt2_y = 133; 
+	int pt3_x = 462, pt3_y = 265; 
+	int pt4_x = 236, pt4_y = 387; 
 
 	Mat outer_mask;
 
@@ -372,7 +353,8 @@ int _tmain(int argc, _TCHAR* argv[])
 						erode(fly_fg, fly_mask, fly_element, Point(-1, -1), fly_erode);
 						dilate(fly_mask, fly_mask, fly_element, Point(-1, -1), fly_dilate);
 
-						//double fm = varianceOfLaplacian(fly_frame);
+						fm = varianceOfLaplacian(fly_frame);
+						fmq.push(fm);
 
 						if (flyview_track)
 						{
@@ -1018,9 +1000,24 @@ int _tmain(int argc, _TCHAR* argv[])
 			Mat tframe, tmask;
 			while (true)
 			{
-				if (flyDispStream.try_dequeue(tframe))
-					imshow("fly image", tframe);
+				if (flyDispStream.try_dequeue(tframe)) {
+					char text_buf[64];
 
+					// Real-time FM GREEN
+					sprintf_s(text_buf, "FM: %.2f", fm);
+					cv::putText(tframe, text_buf, cv::Point(10, 20), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 0), 1);
+
+					//Target Base FM RED
+					sprintf_s(text_buf, "Base FM: %.2f", base_fm);
+					cv::putText(tframe, text_buf, cv::Point(10, 40), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 255), 1);
+
+					//Autofocus Status
+					sprintf_s(text_buf, "AF Status: %s", z_track ? "ON" : "OFF");
+					cv::putText(tframe, text_buf, cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 0, 0), 1);
+				
+					imshow("fly image", tframe);
+				}
+					
 				if (flyMaskStream.try_dequeue(tmask))
 					imshow("fly mask", tmask);
 
@@ -1299,25 +1296,25 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					bg_key_state = 0;
 
-				//if (GetAsyncKeyState(VK_F6))
-				//{
-				//	if (!z_base_key_state)
-				//		base_fm = fm;
+				if (GetAsyncKeyState(VK_F6))
+				{
+					if (!z_base_key_state)
+						base_fm = fm;
 
-				//	z_base_key_state = 1;
-				//}
-				//else
-				//	z_base_key_state = 0;
+					z_base_key_state = 1;
+				}
+				else
+					z_base_key_state = 0;
 
-				//if (GetAsyncKeyState(VK_F7))
-				//{
-				//	if (!z_track_key_state)
-				//		z_track = !z_track;
+				if (GetAsyncKeyState(VK_F7))
+				{
+					if (!z_track_key_state)
+						z_track = !z_track;
 
-				//	z_track_key_state = 1;
-				//}
-				//else
-				//	z_track_key_state = 0;
+					z_track_key_state = 1;
+				}
+				else
+					z_track_key_state = 0;
 
 				if (GetAsyncKeyState(VK_ESCAPE))
 				{
