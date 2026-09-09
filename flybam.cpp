@@ -320,7 +320,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	//double base_fm = 0;
 
 	//Press [F1] to start/stop fly-view tracking, [F2] to start/stop recording, [ESC] to exit.
-	#pragma omp parallel sections num_threads(7)
+	#pragma omp parallel sections num_threads(8)
 	{
 		#pragma omp section
 		{
