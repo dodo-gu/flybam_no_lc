@@ -296,10 +296,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 	printf("[OK]\n");
 
-	int pt1_x = 82, pt1_y = 175; 
-	int pt2_x = 300, pt2_y = 74; 
-	int pt3_x = 480, pt3_y = 204; 
-	int pt4_x = 247, pt4_y = 329; 
+	int pt1_x = 69, pt1_y = 231; 
+	int pt2_x = 284, pt2_y = 130; 
+	int pt3_x = 464, pt3_y = 257; 
+	int pt4_x = 239, pt4_y = 385; 
 
 	Mat outer_mask;
 
