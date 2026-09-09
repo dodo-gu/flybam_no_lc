@@ -267,7 +267,10 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	fvwritedata fvin;
 	avwritedata avin;
-	
+
+	std::vector<double> arena_heading(NFLIES, 0.0);                    
+	std::vector<cv::Point2f> arena_pt_prev(NFLIES, cv::Point2f(0, 0)); 
+
 	error = busMgr.GetNumOfCameras(&numCameras);
 	printf("Number of point grey cameras detected: %u\n", numCameras);
 
@@ -716,41 +719,64 @@ int _tmain(int argc, _TCHAR* argv[])
 						vector<Point2f> arena_mc(arena_contours.size());
 						vector<double> arena_sz(arena_contours.size());
 
+
 						vector<Point2f> arena_ctr_pts;
 						vector<double> arena_ctr_sz;
+						vector<cv::Moments> arena_ctr_mu; 
 
 						for (int i = 0; i < arena_contours.size(); i++)
 						{
 							//drawContours(arena_mask, arena_contours, i, Scalar(255, 255, 255), 1, 8, vector<Vec4i>(), 0, Point());
 							arena_mu[i] = moments(arena_contours[i], false);
 							arena_mc[i] = Point2f(arena_mu[i].m10 / arena_mu[i].m00, arena_mu[i].m01 / arena_mu[i].m00);
-
 							arena_sz[i] = contourArea(arena_contours[i]);
-
-							if (arena_sz[i] > 10)
+							if (arena_sz[i] > 10) 
 							{
 								//drawContours(arena_frame, arena_contours, i, Scalar(255, 255, 255), 1, 8, vector<Vec4i>(), 0, Point());
 								drawContours(arena_mask, arena_contours, i, Scalar(255, 255, 255), FILLED, 1);
 								arena_ctr_pts.push_back(arena_mc[i]);
 								arena_ctr_sz.push_back(arena_sz[i]);
+								arena_ctr_mu.push_back(arena_mu[i]); 
 							}
 						}
 
-						if (arena_ctr_pts.size() >= NFLIES)
-						{
-							for (int i = 0; i < NFLIES; i++)
-							{
+
+						if (arena_ctr_pts.size() >= NFLIES) {
+							for (int i = 0; i < NFLIES; i++) {
 								int j = findClosestPoint(arena_pt[i], arena_ctr_pts);
 
 								arena_pt[i] = arena_ctr_pts[j];
-								
 								fly_pt[i] = arena_pt[i];
 								fly_sz[i] = arena_ctr_sz[j];
 
-								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
+								//  head-tail correction
+								{
+									cv::Moments mu = arena_ctr_mu[j]; 
 
+									double theta = 0.5 * atan2(2.0 * mu.mu11, mu.mu20 - mu.mu02);
+
+									double vx = arena_pt[i].x - arena_pt_prev[i].x;
+									double vy = arena_pt[i].y - arena_pt_prev[i].y;
+									double speed = sqrt(vx * vx + vy * vy);
+
+									if (speed > MIN_MOVE_SPEED) {
+										double dot_product = vx * cos(theta) + vy * sin(theta);
+										if (dot_product < 0) {
+											theta += 3.141592653589793;
+										}
+										arena_heading[i] = theta; 
+									}
+									arena_pt_prev[i] = arena_pt[i];
+								}
+
+								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
+								cv::line(arena_frame, arena_pt[i],
+									cv::Point(arena_pt[i].x + 15 * cos(arena_heading[i]), arena_pt[i].y + 15 * sin(arena_heading[i])),
+									cv::Scalar(0, 255, 0), 1);
+								
 								arena_ctr_pts.erase(arena_ctr_pts.begin() + j);
 								arena_ctr_sz.erase(arena_ctr_sz.begin() + j);
+								arena_ctr_mu.erase(arena_ctr_mu.begin() + j); 
 							}
 						}
 						else if (arena_ctr_pts.size() < NFLIES)
@@ -773,14 +799,22 @@ int _tmain(int argc, _TCHAR* argv[])
 
 								putText(arena_frame, to_string(arena_pt_ind[j]), arena_pt[arena_pt_ind[j]], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
 
+								arena_pt_prev[arena_pt_ind[j]] = arena_pt[arena_pt_ind[j]];
+
 								last_arena_pt.erase(last_arena_pt.begin() + j);
 								arena_pt_ind.erase(arena_pt_ind.begin() + j);
 							}
 						}
 
-						if (!flyview_track && !manual_track)
-						{
-							int j = findClosestPoint(arena_pt[focal_fly], raster_pts);
+						if (!flyview_track && !manual_track) {
+							cv::Point2f body_center = arena_pt[focal_fly];
+							double h_angle = arena_heading[focal_fly];
+
+							cv::Point2f head_target;
+							head_target.x = body_center.x + FLY_HEAD_OFFSET * cos(h_angle);
+							head_target.y = body_center.y + FLY_HEAD_OFFSET * sin(h_angle);
+
+							int j = findClosestPoint(head_target, raster_pts);
 							ndq.SetGalvoAngles(raster_angles[j]);
 							ndq.write();
 						}
