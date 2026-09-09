@@ -71,6 +71,7 @@
 
 #define MIN_MARKER_SIZE 10
 #define MAX_MARKER_SIZE 500
+
 #define NBEADS 3	
 
 //#define Z_PERIOD 50
@@ -79,7 +80,7 @@
 //#define Z_STEP_FINE 1.0
 //#define Z_STEP_HOME 100.0
 
-#define FLY_HEAD_OFFSET 8.5  
-#define MIN_MOVE_SPEED  2.0 
+#define FLY_HEAD_OFFSET 8  
+#define MIN_MOVE_SPEED  0.8 
 
 // TODO: reference additional headers your program requires here

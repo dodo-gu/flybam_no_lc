@@ -771,7 +771,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
 								cv::line(arena_frame, arena_pt[i],
-									cv::Point(arena_pt[i].x + 15 * cos(arena_heading[i]), arena_pt[i].y + 15 * sin(arena_heading[i])),
+									cv::Point(arena_pt[i].x + FLY_HEAD_OFFSET * cos(arena_heading[i]), arena_pt[i].y + FLY_HEAD_OFFSET * sin(arena_heading[i])),
 									cv::Scalar(0, 255, 0), 1);
 								
 								arena_ctr_pts.erase(arena_ctr_pts.begin() + j);
