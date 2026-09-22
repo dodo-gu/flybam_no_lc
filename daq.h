@@ -61,7 +61,12 @@ public:
 	// Presets
 	void FocusMin();    // 0V
 	void FocusMax();    // 10V
-	void FocusCenter(); // 5V
+	void FocusDefault(); // default setting
+
+	double getLensVoltage1() const { return lensVoltage1; }
+	double getLensVoltage2() const { return lensVoltage2; }
+	void setLensVoltage1(double v) { lensVoltage1 = v; }
+	void setLensVoltage2(double v) { lensVoltage2 = v; }
 };
 
 #endif

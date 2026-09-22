@@ -85,4 +85,11 @@
 #define ALPHA_ANGLE  0.25
 #define ALPHA_POS 0.35
 
+// =========================================================================
+// Default Focus Startup Voltages (Liquid Lenses AO2 & AO3)
+// =========================================================================
+#define DEFAULT_LENS1_VOLTAGE  4.25f   // Default AO2 voltage (V) - update after F6 test
+#define DEFAULT_LENS2_VOLTAGE  3.80f   // Default AO3 voltage (V) - update after F6 test
+#define DEFAULT_BASE_FM        28.60   // Default baseline image focus score
+
 // TODO: reference additional headers your program requires here

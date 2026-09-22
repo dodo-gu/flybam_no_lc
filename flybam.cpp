@@ -164,7 +164,11 @@ int _tmain(int argc, _TCHAR* argv[])
 	Daq ndq;
 	ndq.configure();
 	ndq.start();
-	ndq.write();
+
+	ndq.setLensVoltage1(DEFAULT_LENS1_VOLTAGE);
+	ndq.setLensVoltage2(DEFAULT_LENS2_VOLTAGE);
+	ndq.write(); // Commit default voltages to NIDAQ hardware channels
+
 
 	ndq.startTrigger();
 
@@ -1110,6 +1114,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int flash_key_state = 0;
 			int bg_key_state = 0;
 			int fly_key_state = 0;
+			int z_base_key_state = 0;
 			
 			//int z_base_key_state = 0;
 			//int z_track_key_state = 0;
@@ -1122,7 +1127,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int reset_galvo_state = 0;;
 			int min_state = 0;
 			int max_state = 0;
-			int center_state = 0;
+			int default_focus_state = 0;
 
 			while (true)
 			{
@@ -1249,10 +1254,10 @@ int _tmain(int argc, _TCHAR* argv[])
 				// Numpad 8: Center (5V)
 				if (GetAsyncKeyState(VK_NUMPAD8))
 				{
-					if (!center_state) ndq.FocusCenter();
-					center_state = 1;
+					if (!default_focus_state) ndq.FocusDefault();
+					default_focus_state = 1;
 				}
-				else center_state = 0;
+				else default_focus_state = 0;
 
 				// Numpad 9: Max (10V)
 				if (GetAsyncKeyState(VK_NUMPAD9))
@@ -1367,6 +1372,35 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					bg_key_state = 0;
 
+				if (GetAsyncKeyState(VK_F4))
+				{
+					if (!flash_key_state)
+					{
+						ndq.flashHigh();     // Turn flash ON
+						flashPressed = true;
+
+						Sleep(50);           // Keep ON for 50 milliseconds
+
+						ndq.flashLow();      // Turn flash OFF
+						flashPressed = false;
+					}
+					flash_key_state = 1;
+				}
+				else
+					flash_key_state = 0;
+
+				if (GetAsyncKeyState(VK_F6)) {
+					if (!z_base_key_state) {
+
+						::printf("Lens Voltage 1 (AO2) : %.3f V\n", ndq.getLensVoltage1());
+						::printf("Lens Voltage 2 (AO3) : %.3f V\n", ndq.getLensVoltage2());
+					}
+					z_base_key_state = 1; // Debounce flag to prevent repeated triggers while held
+				}
+				else {
+					z_base_key_state = 0; // Reset flag when F6 key is released
+				}
+
 				//if (GetAsyncKeyState(VK_F6))
 				//{
 				//	if (!z_base_key_state)
@@ -1439,18 +1473,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					reset_galvo_state = 0;
 
-				if (GetAsyncKeyState(VK_F4))
-				{
-					if (!flash_key_state)
-					{
-						ndq.flashHigh();
-						flashPressed = true;
-					}
 
-					flash_key_state = 1;
-				}
-				else
-					flash_key_state = 0;
 			}
 		}
 	}
