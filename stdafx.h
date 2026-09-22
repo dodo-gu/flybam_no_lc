@@ -46,7 +46,7 @@
 #define GALVO_XY_DIST 15.174			//in mm
 #define GALVO_X_MIRROR_ANGLE 15			//in degrees
 //#define GALVO_STEP_SIZE 0.0000075		// doubled the step size to maintain similar manual speed control (due to spectre/meltdown processor slowdown)
-#define GALVO_STEP_SIZE 0.00003		
+#define GALVO_STEP_SIZE 0.000015		
 
 #define XVOLTPERDEGREE 0.51
 #define YVOLTPERDEGREE 0.514
@@ -71,15 +71,25 @@
 
 #define MIN_MARKER_SIZE 10
 #define MAX_MARKER_SIZE 500
-#define NBEADS 3
 
-#define DEFAULT_BASE_FM 20.0
-
+#define NBEADS 3	
 
 //#define Z_PERIOD 50
 //#define Z_EPSILON 5.0
 //#define Z_STEP_COARSE 2.0
 //#define Z_STEP_FINE 1.0
 //#define Z_STEP_HOME 100.0
+
+#define FLY_HEAD_OFFSET 8  
+#define MIN_MOVE_SPEED  0.8 
+#define ALPHA_ANGLE  0.25
+#define ALPHA_POS 0.35
+
+// =========================================================================
+// Default Focus Startup Voltages (Liquid Lenses AO2 & AO3)
+// =========================================================================
+#define DEFAULT_LENS1_VOLTAGE  4.25f   // Default AO2 voltage (V) - update after F6 test
+#define DEFAULT_LENS2_VOLTAGE  3.80f   // Default AO3 voltage (V) - update after F6 test
+#define DEFAULT_BASE_FM        28.60   // Default baseline image focus score
 
 // TODO: reference additional headers your program requires here

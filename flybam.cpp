@@ -164,19 +164,42 @@ int _tmain(int argc, _TCHAR* argv[])
 	Daq ndq;
 	ndq.configure();
 	ndq.start();
-	ndq.write();
+
+	ndq.setLensVoltage1(DEFAULT_LENS1_VOLTAGE);
+	ndq.setLensVoltage2(DEFAULT_LENS2_VOLTAGE);
+	ndq.write(); // Commit default voltages to NIDAQ hardware channels
+
 
 	ndq.startTrigger();
 
-	// Auto Focus control
-	bool z_track = false;
-	double fm = 0.0;
+	// init arduino for camera lens control
+	// Serial* SP = new Serial("COM4");    // adjust as needed
 
-	double base_fm = DEFAULT_BASE_FM;
+	//if (SP->IsConnected())
+	//{
+	//	printf("Connecting lens controller arduino [OK]\n");
+	//	while (SP->ReadData(serial_buffer, 2) != -1)
+	//	{ }
 
-	int z_track_key_state = 0;
-	int z_base_key_state = 0;
-	const double Z_EPSILON = 5.0;
+	//	// Query for lens position
+	//	ndq.lensCommand(7);
+
+	//	printf("Reading initial lens position from Arduino ");
+	//	Sleep(2000);
+
+	//	if (SP->ReadData(serial_buffer, 2) != -1)
+	//	{
+	//		lens_pos = (serial_buffer[1] & 0xFF) << 8 | (serial_buffer[0] & 0xFF);
+	//		printf("%d [OK]\n", lens_pos);
+	//	}
+	//	else
+	//		printf("Read failed\n");
+
+	//	// Shutdown Serial
+	//	SP->~Serial();
+	//}
+	//else
+	//	printf("Failed connecting to arduino over serial\n");
 
 	configFilename = "..\\ccf\\P_GZL-CL-20C5M_Gazelle_240x240.ccf";
 	
@@ -246,9 +269,13 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	vector<Point2f> arena_pt(NFLIES);
 
+	std::vector<double> arena_heading(NFLIES, 0.0);                    // Head orientation angle (radians)
+	std::vector<cv::Point2f> arena_pt_prev(NFLIES, cv::Point2f(0, 0)); // Previous frame centroid position (for velocity)
+	std::vector<cv::Point2f> head_target_smooth(NFLIES, cv::Point2f(0, 0)); // Smoothed galvo target coordinates
+
 	fvwritedata fvin;
 	avwritedata avin;
-	
+
 	error = busMgr.GetNumOfCameras(&numCameras);
 	printf("Number of point grey cameras detected: %u\n", numCameras);
 
@@ -278,9 +305,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	printf("[OK]\n");
 
 	int pt1_x = 69, pt1_y = 231; 
-	int pt2_x = 292, pt2_y = 133; 
-	int pt3_x = 462, pt3_y = 265; 
-	int pt4_x = 236, pt4_y = 387; 
+	int pt2_x = 284, pt2_y = 130; 
+	int pt3_x = 464, pt3_y = 257; 
+	int pt4_x = 239, pt4_y = 385; 
 
 	Mat outer_mask;
 
@@ -320,7 +347,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	//double base_fm = 0;
 
 	//Press [F1] to start/stop fly-view tracking, [F2] to start/stop recording, [ESC] to exit.
-	#pragma omp parallel sections num_threads(8)
+	#pragma omp parallel sections num_threads(7)
 	{
 		#pragma omp section
 		{
@@ -353,8 +380,7 @@ int _tmain(int argc, _TCHAR* argv[])
 						erode(fly_fg, fly_mask, fly_element, Point(-1, -1), fly_erode);
 						dilate(fly_mask, fly_mask, fly_element, Point(-1, -1), fly_dilate);
 
-						fm = varianceOfLaplacian(fly_frame);
-						fmq.push(fm);
+						//double fm = varianceOfLaplacian(fly_frame);
 
 						if (flyview_track)
 						{
@@ -698,41 +724,72 @@ int _tmain(int argc, _TCHAR* argv[])
 						vector<Point2f> arena_mc(arena_contours.size());
 						vector<double> arena_sz(arena_contours.size());
 
+
 						vector<Point2f> arena_ctr_pts;
 						vector<double> arena_ctr_sz;
+						vector<cv::Moments> arena_ctr_mu; 
 
 						for (int i = 0; i < arena_contours.size(); i++)
 						{
 							//drawContours(arena_mask, arena_contours, i, Scalar(255, 255, 255), 1, 8, vector<Vec4i>(), 0, Point());
 							arena_mu[i] = moments(arena_contours[i], false);
 							arena_mc[i] = Point2f(arena_mu[i].m10 / arena_mu[i].m00, arena_mu[i].m01 / arena_mu[i].m00);
-
 							arena_sz[i] = contourArea(arena_contours[i]);
-
-							if (arena_sz[i] > 10)
+							if (arena_sz[i] > 10) 
 							{
 								//drawContours(arena_frame, arena_contours, i, Scalar(255, 255, 255), 1, 8, vector<Vec4i>(), 0, Point());
 								drawContours(arena_mask, arena_contours, i, Scalar(255, 255, 255), FILLED, 1);
 								arena_ctr_pts.push_back(arena_mc[i]);
 								arena_ctr_sz.push_back(arena_sz[i]);
+								arena_ctr_mu.push_back(arena_mu[i]); 
 							}
 						}
 
-						if (arena_ctr_pts.size() >= NFLIES)
-						{
-							for (int i = 0; i < NFLIES; i++)
-							{
+
+						if (arena_ctr_pts.size() >= NFLIES) {
+							for (int i = 0; i < NFLIES; i++) {
 								int j = findClosestPoint(arena_pt[i], arena_ctr_pts);
 
 								arena_pt[i] = arena_ctr_pts[j];
-								
 								fly_pt[i] = arena_pt[i];
 								fly_sz[i] = arena_ctr_sz[j];
 
-								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
+								//  head-tail correction
+								{
+									cv::Moments mu = arena_ctr_mu[j]; 
 
+									double theta = 0.5 * atan2(2.0 * mu.mu11, mu.mu20 - mu.mu02);
+
+									double vx = arena_pt[i].x - arena_pt_prev[i].x;
+									double vy = arena_pt[i].y - arena_pt_prev[i].y;
+									double speed = sqrt(vx * vx + vy * vy);
+
+									if (speed > MIN_MOVE_SPEED) {
+										double dot_product = vx * cos(theta) + vy * sin(theta);
+										if (dot_product < 0) {
+											theta += 3.141592653589793;
+										}
+										double new_vx = cos(theta);
+										double new_vy = sin(theta);
+										double old_vx = cos(arena_heading[i]);
+										double old_vy = sin(arena_heading[i]);
+
+										double smooth_vx = (1.0 - ALPHA_ANGLE) * old_vx + ALPHA_ANGLE * new_vx;
+										double smooth_vy = (1.0 - ALPHA_ANGLE) * old_vy + ALPHA_ANGLE * new_vy;
+
+										arena_heading[i] = atan2(smooth_vy, smooth_vx); // Re-synthesize smoothed angle
+									}
+									arena_pt_prev[i] = arena_pt[i];
+								}
+
+								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
+								cv::line(arena_frame, arena_pt[i],
+									cv::Point(arena_pt[i].x + FLY_HEAD_OFFSET * cos(arena_heading[i]), arena_pt[i].y + FLY_HEAD_OFFSET * sin(arena_heading[i])),
+									cv::Scalar(0, 255, 0), 1);
+								
 								arena_ctr_pts.erase(arena_ctr_pts.begin() + j);
 								arena_ctr_sz.erase(arena_ctr_sz.begin() + j);
+								arena_ctr_mu.erase(arena_ctr_mu.begin() + j); 
 							}
 						}
 						else if (arena_ctr_pts.size() < NFLIES)
@@ -755,14 +812,47 @@ int _tmain(int argc, _TCHAR* argv[])
 
 								putText(arena_frame, to_string(arena_pt_ind[j]), arena_pt[arena_pt_ind[j]], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
 
+								arena_pt_prev[arena_pt_ind[j]] = arena_pt[arena_pt_ind[j]];
+
 								last_arena_pt.erase(last_arena_pt.begin() + j);
 								arena_pt_ind.erase(arena_pt_ind.begin() + j);
 							}
 						}
 
-						if (!flyview_track && !manual_track)
-						{
-							int j = findClosestPoint(arena_pt[focal_fly], raster_pts);
+						if (!flyview_track && !manual_track) {
+							cv::Point2f body_center = arena_pt[focal_fly];
+
+							// 1. Safety Guard: Ignore uninitialized zero positions
+							if (body_center.x <= 1.0f && body_center.y <= 1.0f) {
+								continue;
+							}
+
+							double h_angle = arena_heading[focal_fly];
+
+							if (std::isnan(h_angle) || std::isinf(h_angle)) {
+								h_angle = 0.0;
+							}
+
+							// 2. Compute raw target position shifted by FLY_HEAD_OFFSET
+							cv::Point2f raw_head_target;
+							raw_head_target.x = body_center.x + FLY_HEAD_OFFSET * cos(h_angle);
+							raw_head_target.y = body_center.y + FLY_HEAD_OFFSET * sin(h_angle);
+
+							// 3. Target Position Low-Pass Filtering (EMA)
+							if (head_target_smooth[focal_fly].x == 0 && head_target_smooth[focal_fly].y == 0) {
+								head_target_smooth[focal_fly] = raw_head_target;
+							}
+							else {
+								head_target_smooth[focal_fly].x = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].x + ALPHA_POS * raw_head_target.x;
+								head_target_smooth[focal_fly].y = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].y + ALPHA_POS * raw_head_target.y;
+							}
+
+							// Optional Debug Markers: Draw blue circle for body centroid, red circle for head target
+							cv::circle(arena_frame, body_center, 3, cv::Scalar(255, 0, 0), -1);
+							cv::circle(arena_frame, head_target_smooth[focal_fly], 3, cv::Scalar(0, 0, 255), -1);
+
+							// 4. Find closest calibration grid point and drive galvo
+							int j = findClosestPoint(head_target_smooth[focal_fly], raster_pts);
 							ndq.SetGalvoAngles(raster_angles[j]);
 							ndq.write();
 						}
@@ -1000,24 +1090,9 @@ int _tmain(int argc, _TCHAR* argv[])
 			Mat tframe, tmask;
 			while (true)
 			{
-				if (flyDispStream.try_dequeue(tframe)) {
-					char text_buf[64];
-
-					// Real-time FM GREEN
-					sprintf_s(text_buf, "FM: %.2f", fm);
-					cv::putText(tframe, text_buf, cv::Point(10, 20), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 0), 1);
-
-					//Target Base FM RED
-					sprintf_s(text_buf, "Base FM: %.2f", base_fm);
-					cv::putText(tframe, text_buf, cv::Point(10, 40), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 255), 1);
-
-					//Autofocus Status
-					sprintf_s(text_buf, "AF Status: %s", z_track ? "ON" : "OFF");
-					cv::putText(tframe, text_buf, cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 0, 0), 1);
-				
+				if (flyDispStream.try_dequeue(tframe))
 					imshow("fly image", tframe);
-				}
-					
+
 				if (flyMaskStream.try_dequeue(tmask))
 					imshow("fly mask", tmask);
 
@@ -1032,110 +1107,6 @@ int _tmain(int argc, _TCHAR* argv[])
 			}
 		}
 
-#pragma omp section 
-		{
-			double cfm = 0.0;
-			double last_fm = 0.0;
-			bool z_track_init = false;
-			int z_state = 0;
-			int dz = 0; // 0 for Down, 1 for Up
-
-			while (true) {
-				if (fmq.try_pop(cfm)) {
-					if (z_track) {
-						if ((z_track_init != z_track) && (base_fm <= 0.0)) {
-							base_fm = cfm;
-						}
-
-						double delta = base_fm - cfm;
-
-						// 4-state focus search state machine
-						switch (z_state) {
-						case 0:
-							if (delta > Z_EPSILON) {
-								dz = rand() % 2; // Random initial direction
-								if (dz == 0) {
-									ndq.MoveBothFocusDown();
-								}
-								else {
-									ndq.MoveBothFocusUp();
-								}
-								z_state = 1;
-								printf("AF: [State 0 -> 1] Defocus %.2f, starting exploration...\n", delta);
-							}
-							break;
-
-						case 1:
-							if (delta > Z_EPSILON) {
-								if (last_fm > cfm) {
-									// Clarity dropped, wrong direction. Reverse with 3x step
-									if (dz == 0) {
-										ndq.MoveBothFocusUp();
-										ndq.MoveBothFocusUp();
-										ndq.MoveBothFocusUp();
-									}
-									else {
-										ndq.MoveBothFocusDown();
-										ndq.MoveBothFocusDown();
-										ndq.MoveBothFocusDown();
-									}
-									z_state = 2;
-									printf("AF: [State 1 -> 2] Wrong direction! Reversing with large step...\n");
-								}
-								else {
-									// Clarity improved, correct direction. Keep going
-									if (dz == 0) {
-										ndq.MoveBothFocusDown();
-									}
-									else {
-										ndq.MoveBothFocusUp();
-									}
-									z_state = 0;
-									printf("AF: [State 1 -> 0] Correct direction, proceeding...\n");
-								}
-							}
-							else {
-								z_state = 0; // Recovered within tolerance
-							}
-							break;
-
-						case 2:
-							if (delta > Z_EPSILON) {
-								if (last_fm > cfm) {
-									if (dz == 0) {
-										ndq.MoveBothFocusDown();
-									}
-									else {
-										ndq.MoveBothFocusUp();
-									}
-								}
-								else {
-									if (dz == 0) {
-										ndq.MoveBothFocusUp();
-									}
-									else {
-										ndq.MoveBothFocusDown();
-									}
-								}
-							}
-							z_state = 0; // Return to monitoring
-							break;
-						}
-					}
-					else {
-						z_state = 0; // Safe reset without clearing base_fm
-					}
-
-					last_fm = cfm;
-					z_track_init = z_track;
-				}
-				else {
-					Sleep(1);
-				}
-				if (!stream) break;
-			}
-		}
-
 		#pragma omp section
 		{
 			int record_key_state = 0;
@@ -1143,6 +1114,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int flash_key_state = 0;
 			int bg_key_state = 0;
 			int fly_key_state = 0;
+			int z_base_key_state = 0;
 			
 			//int z_base_key_state = 0;
 			//int z_track_key_state = 0;
@@ -1155,7 +1127,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int reset_galvo_state = 0;;
 			int min_state = 0;
 			int max_state = 0;
-			int center_state = 0;
+			int default_focus_state = 0;
 
 			while (true)
 			{
@@ -1282,10 +1254,10 @@ int _tmain(int argc, _TCHAR* argv[])
 				// Numpad 8: Center (5V)
 				if (GetAsyncKeyState(VK_NUMPAD8))
 				{
-					if (!center_state) ndq.FocusCenter();
-					center_state = 1;
+					if (!default_focus_state) ndq.FocusDefault();
+					default_focus_state = 1;
 				}
-				else center_state = 0;
+				else default_focus_state = 0;
 
 				// Numpad 9: Max (10V)
 				if (GetAsyncKeyState(VK_NUMPAD9))
@@ -1400,25 +1372,54 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					bg_key_state = 0;
 
-				if (GetAsyncKeyState(VK_F6))
+				if (GetAsyncKeyState(VK_F4))
 				{
-					if (!z_base_key_state)
-						base_fm = fm;
+					if (!flash_key_state)
+					{
+						ndq.flashHigh();     // Turn flash ON
+						flashPressed = true;
 
-					z_base_key_state = 1;
+						Sleep(50);           // Keep ON for 50 milliseconds
+
+						ndq.flashLow();      // Turn flash OFF
+						flashPressed = false;
+					}
+					flash_key_state = 1;
 				}
 				else
-					z_base_key_state = 0;
+					flash_key_state = 0;
 
-				if (GetAsyncKeyState(VK_F7))
-				{
-					if (!z_track_key_state)
-						z_track = !z_track;
+				if (GetAsyncKeyState(VK_F6)) {
+					if (!z_base_key_state) {
 
-					z_track_key_state = 1;
+						::printf("Lens Voltage 1 (AO2) : %.3f V\n", ndq.getLensVoltage1());
+						::printf("Lens Voltage 2 (AO3) : %.3f V\n", ndq.getLensVoltage2());
+					}
+					z_base_key_state = 1; // Debounce flag to prevent repeated triggers while held
 				}
-				else
-					z_track_key_state = 0;
+				else {
+					z_base_key_state = 0; // Reset flag when F6 key is released
+				}
+
+				//if (GetAsyncKeyState(VK_F6))
+				//{
+				//	if (!z_base_key_state)
+				//		base_fm = fm;
+
+				//	z_base_key_state = 1;
+				//}
+				//else
+				//	z_base_key_state = 0;
+
+				//if (GetAsyncKeyState(VK_F7))
+				//{
+				//	if (!z_track_key_state)
+				//		z_track = !z_track;
+
+				//	z_track_key_state = 1;
+				//}
+				//else
+				//	z_track_key_state = 0;
 
 				if (GetAsyncKeyState(VK_ESCAPE))
 				{
@@ -1472,18 +1473,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					reset_galvo_state = 0;
 
-				if (GetAsyncKeyState(VK_F4))
-				{
-					if (!flash_key_state)
-					{
-						ndq.flashHigh();
-						flashPressed = true;
-					}
 
-					flash_key_state = 1;
-				}
-				else
-					flash_key_state = 0;
 			}
 		}
 	}

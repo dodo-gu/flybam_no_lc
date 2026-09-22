@@ -319,9 +319,9 @@ void Daq::FocusMax()
 	writeLens();
 }
 
-void Daq::FocusCenter()
+void Daq::FocusDefault()
 {
-	lensVoltage1 = 5.0;
-	lensVoltage2 = 5.0;
+	lensVoltage1 = DEFAULT_LENS1_VOLTAGE;
+	lensVoltage2 = DEFAULT_LENS1_VOLTAGE;
 	writeLens();
 }
