@@ -265,11 +265,12 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	vector<Point2f> arena_pt(NFLIES);
 
+	std::vector<double> arena_heading(NFLIES, 0.0);                    // Head orientation angle (radians)
+	std::vector<cv::Point2f> arena_pt_prev(NFLIES, cv::Point2f(0, 0)); // Previous frame centroid position (for velocity)
+	std::vector<cv::Point2f> head_target_smooth(NFLIES, cv::Point2f(0, 0)); // Smoothed galvo target coordinates
+
 	fvwritedata fvin;
 	avwritedata avin;
-
-	std::vector<double> arena_heading(NFLIES, 0.0);                    
-	std::vector<cv::Point2f> arena_pt_prev(NFLIES, cv::Point2f(0, 0)); 
 
 	error = busMgr.GetNumOfCameras(&numCameras);
 	printf("Number of point grey cameras detected: %u\n", numCameras);
@@ -764,7 +765,15 @@ int _tmain(int argc, _TCHAR* argv[])
 										if (dot_product < 0) {
 											theta += 3.141592653589793;
 										}
-										arena_heading[i] = theta; 
+										double new_vx = cos(theta);
+										double new_vy = sin(theta);
+										double old_vx = cos(arena_heading[i]);
+										double old_vy = sin(arena_heading[i]);
+
+										double smooth_vx = (1.0 - ALPHA_ANGLE) * old_vx + ALPHA_ANGLE * new_vx;
+										double smooth_vy = (1.0 - ALPHA_ANGLE) * old_vy + ALPHA_ANGLE * new_vy;
+
+										arena_heading[i] = atan2(smooth_vy, smooth_vx); // Re-synthesize smoothed angle
 									}
 									arena_pt_prev[i] = arena_pt[i];
 								}
@@ -808,13 +817,38 @@ int _tmain(int argc, _TCHAR* argv[])
 
 						if (!flyview_track && !manual_track) {
 							cv::Point2f body_center = arena_pt[focal_fly];
+
+							// 1. Safety Guard: Ignore uninitialized zero positions
+							if (body_center.x <= 1.0f && body_center.y <= 1.0f) {
+								continue;
+							}
+
 							double h_angle = arena_heading[focal_fly];
 
-							cv::Point2f head_target;
-							head_target.x = body_center.x + FLY_HEAD_OFFSET * cos(h_angle);
-							head_target.y = body_center.y + FLY_HEAD_OFFSET * sin(h_angle);
+							if (std::isnan(h_angle) || std::isinf(h_angle)) {
+								h_angle = 0.0;
+							}
 
-							int j = findClosestPoint(head_target, raster_pts);
+							// 2. Compute raw target position shifted by FLY_HEAD_OFFSET
+							cv::Point2f raw_head_target;
+							raw_head_target.x = body_center.x + FLY_HEAD_OFFSET * cos(h_angle);
+							raw_head_target.y = body_center.y + FLY_HEAD_OFFSET * sin(h_angle);
+
+							// 3. Target Position Low-Pass Filtering (EMA)
+							if (head_target_smooth[focal_fly].x == 0 && head_target_smooth[focal_fly].y == 0) {
+								head_target_smooth[focal_fly] = raw_head_target;
+							}
+							else {
+								head_target_smooth[focal_fly].x = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].x + ALPHA_POS * raw_head_target.x;
+								head_target_smooth[focal_fly].y = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].y + ALPHA_POS * raw_head_target.y;
+							}
+
+							// Optional Debug Markers: Draw blue circle for body centroid, red circle for head target
+							cv::circle(arena_frame, body_center, 3, cv::Scalar(255, 0, 0), -1);
+							cv::circle(arena_frame, head_target_smooth[focal_fly], 3, cv::Scalar(0, 0, 255), -1);
+
+							// 4. Find closest calibration grid point and drive galvo
+							int j = findClosestPoint(head_target_smooth[focal_fly], raster_pts);
 							ndq.SetGalvoAngles(raster_angles[j]);
 							ndq.write();
 						}

@@ -82,5 +82,7 @@
 
 #define FLY_HEAD_OFFSET 8  
 #define MIN_MOVE_SPEED  0.8 
+#define ALPHA_ANGLE  0.25
+#define ALPHA_POS 0.35
 
 // TODO: reference additional headers your program requires here
