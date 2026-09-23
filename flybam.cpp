@@ -1251,7 +1251,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 				else min_state = 0;
 
-				// Numpad 8: Center (5V)
+				// Numpad 8: Default focus
 				if (GetAsyncKeyState(VK_NUMPAD8))
 				{
 					if (!default_focus_state) ndq.FocusDefault();
@@ -1355,8 +1355,8 @@ int _tmain(int argc, _TCHAR* argv[])
 						
 						fvrcount = 0;
 						avrcount = 0;
-					}
 
+					}			
 					record_key_state = 1;
 				}
 				else
