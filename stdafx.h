@@ -80,16 +80,29 @@
 //#define Z_STEP_FINE 1.0
 //#define Z_STEP_HOME 100.0
 
-#define FLY_HEAD_OFFSET 12  
-#define MIN_MOVE_SPEED  1.0 
-#define ALPHA_ANGLE  0.4
-#define ALPHA_POS 0.35
-
 // =========================================================================
 // Default Focus Startup Voltages (Liquid Lenses AO2 & AO3)
 // =========================================================================
 #define DEFAULT_LENS1_VOLTAGE  5.20f   // Default AO2 voltage (V) - update after F6 test
 #define DEFAULT_LENS2_VOLTAGE  5.20f   // Default AO3 voltage (V) - update after F6 test
 #define DEFAULT_BASE_FM        28.60   // Default baseline image focus score
+
+// =========================================================================
+// Arena head tracking parameters
+// =========================================================================
+
+// Total centroid displacement required before initial head/tail polarity
+// is determined from movement direction.
+#define HEAD_INIT_DISPLACEMENT 3.0f
+
+// Weight of the newest body-axis direction.
+// 1.0 = fastest response, no angular smoothing.
+// Lower values = smoother but slower response.
+#define HEAD_DIR_ALPHA 0.75f
+
+// Fraction of the centroid-to-head-contour distance used as the target.
+// 1.0 = exactly on the contour boundary.
+// 0.85 = slightly inside the head side of the body.
+#define HEAD_TARGET_RATIO 0.85f
 
 // TODO: reference additional headers your program requires here

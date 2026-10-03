@@ -147,6 +147,16 @@ double varianceOfLaplacian(const cv::Mat& src)
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+
+	// Let the existing application threads provide concurrency.
+// Avoid additional OpenCV worker threads during this test.
+	cv::setNumThreads(1);
+
+	std::printf(
+		"OpenCV internal thread count: %d\n",
+		cv::getNumThreads()
+	);
+
 	// initialize camera link gazelle camera
 	SapAcquisition	*Acq	 = NULL;
 	SapBuffer		*Buffers = NULL;
@@ -269,9 +279,31 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	vector<Point2f> arena_pt(NFLIES);
 
-	std::vector<double> arena_heading(NFLIES, 0.0);                    // Head orientation angle (radians)
-	std::vector<cv::Point2f> arena_pt_prev(NFLIES, cv::Point2f(0, 0)); // Previous frame centroid position (for velocity)
-	std::vector<cv::Point2f> head_target_smooth(NFLIES, cv::Point2f(0, 0)); // Smoothed galvo target coordinates
+	// Directed anatomical head orientation, in radians.
+	std::vector<double> arena_heading(
+		NFLIES,
+		0.0
+	);
+
+	// Position at which we started waiting for enough movement
+	// to initialize head/tail polarity.
+	std::vector<cv::Point2f> arena_head_init_pt(
+		NFLIES,
+		cv::Point2f(0, 0)
+	);
+
+	// Whether at least one valid centroid has been detected.
+	std::vector<bool> arena_pos_initialized(
+		NFLIES,
+		false
+	);
+
+	// Whether movement has established which body-axis end
+	// corresponds to the head.
+	std::vector<bool> arena_heading_initialized(
+		NFLIES,
+		false
+	);
 
 	fvwritedata fvin;
 	avwritedata avin;
@@ -306,7 +338,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	int pt1_x = 69, pt1_y = 231; 
 	int pt2_x = 284, pt2_y = 130; 
-	int pt3_x = 464, pt3_y = 257; 
+	int pt3_x = 460, pt3_y = 260; 
 	int pt4_x = 239, pt4_y = 385; 
 
 	Mat outer_mask;
@@ -678,6 +710,18 @@ int _tmain(int argc, _TCHAR* argv[])
 				{
 					vector<Point2f> fly_pt(NFLIES);
 					vector<double> fly_sz(NFLIES);
+
+					// Head/control target calculated only from the current arena frame.
+					vector<Point2f> fly_head_target(
+						NFLIES,
+						Point2f(0, 0)
+					);
+
+					// Indicates whether a valid control target exists in this frame.
+					vector<bool> fly_head_target_valid(
+						NFLIES,
+						false
+					);
 					
 					arena_fps = ConvertTimeToFPS(img.GetTimeStamp().cycleCount, arena_last);
 					arena_last = img.GetTimeStamp().cycleCount;
@@ -716,6 +760,11 @@ int _tmain(int argc, _TCHAR* argv[])
 					vector<vector<Point>> arena_contours;
 
 					findContours(arena_mask, arena_contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+					cv::cvtColor(
+						arena_frame,
+						arena_frame,
+						cv::COLOR_GRAY2BGR
+					);
 
 					if (arena_contours.size() > 0)
 					{
@@ -728,6 +777,7 @@ int _tmain(int argc, _TCHAR* argv[])
 						vector<Point2f> arena_ctr_pts;
 						vector<double> arena_ctr_sz;
 						vector<cv::Moments> arena_ctr_mu; 
+						vector<vector<Point>> arena_ctr_contours;
 
 						for (int i = 0; i < arena_contours.size(); i++)
 						{
@@ -742,9 +792,9 @@ int _tmain(int argc, _TCHAR* argv[])
 								arena_ctr_pts.push_back(arena_mc[i]);
 								arena_ctr_sz.push_back(arena_sz[i]);
 								arena_ctr_mu.push_back(arena_mu[i]); 
+								arena_ctr_contours.push_back(arena_contours[i]);
 							}
 						}
-
 
 						if (arena_ctr_pts.size() >= NFLIES) {
 							for (int i = 0; i < NFLIES; i++) {
@@ -755,41 +805,288 @@ int _tmain(int argc, _TCHAR* argv[])
 								fly_sz[i] = arena_ctr_sz[j];
 
 								//  head-tail correction
+								// Copy the matched contour before the parallel vectors are erased.
+								vector<Point> matched_contour =
+									arena_ctr_contours[j];
+
+
+								// ============================================================
+								// Arena-only adaptive head tracking
+								// ============================================================
+
+								// Body-axis orientation from contour central moments.
+								//
+								// Important:
+								// this gives an AXIS, not a directed head orientation.
+								// theta and theta + pi represent the same body axis.
+								cv::Moments mu =
+									arena_ctr_mu[j];
+
+								double theta_axis =
+									0.5 * atan2(
+										2.0 * mu.mu11,
+										mu.mu20 - mu.mu02
+									);
+
+								cv::Point2f axis_dir(
+									static_cast<float>(cos(theta_axis)),
+									static_cast<float>(sin(theta_axis))
+								);
+
+
+								// ------------------------------------------------------------
+								// A. Initialize the position reference
+								// ------------------------------------------------------------
+								if (!arena_pos_initialized[i])
 								{
-									cv::Moments mu = arena_ctr_mu[j]; 
+									arena_head_init_pt[i] =
+										arena_pt[i];
 
-									double theta = 0.5 * atan2(2.0 * mu.mu11, mu.mu20 - mu.mu02);
-
-									double vx = arena_pt[i].x - arena_pt_prev[i].x;
-									double vy = arena_pt[i].y - arena_pt_prev[i].y;
-									double speed = sqrt(vx * vx + vy * vy);
-
-									if (speed > MIN_MOVE_SPEED) {
-										double dot_product = vx * cos(theta) + vy * sin(theta);
-										if (dot_product < 0) {
-											theta += 3.141592653589793;
-										}
-										double new_vx = cos(theta);
-										double new_vy = sin(theta);
-										double old_vx = cos(arena_heading[i]);
-										double old_vy = sin(arena_heading[i]);
-
-										double smooth_vx = (1.0 - ALPHA_ANGLE) * old_vx + ALPHA_ANGLE * new_vx;
-										double smooth_vy = (1.0 - ALPHA_ANGLE) * old_vy + ALPHA_ANGLE * new_vy;
-
-										arena_heading[i] = atan2(smooth_vy, smooth_vx); // Re-synthesize smoothed angle
-									}
-									arena_pt_prev[i] = arena_pt[i];
+									arena_pos_initialized[i] =
+										true;
 								}
 
-								putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
-								cv::line(arena_frame, arena_pt[i],
-									cv::Point(arena_pt[i].x + FLY_HEAD_OFFSET * cos(arena_heading[i]), arena_pt[i].y + FLY_HEAD_OFFSET * sin(arena_heading[i])),
-									cv::Scalar(0, 255, 0), 1);
-								
+
+								// ------------------------------------------------------------
+								// B. Initialize head/tail polarity from initial movement
+								// ------------------------------------------------------------
+								else if (!arena_heading_initialized[i])
+								{
+									float move_x =
+										arena_pt[i].x -
+										arena_head_init_pt[i].x;
+
+									float move_y =
+										arena_pt[i].y -
+										arena_head_init_pt[i].y;
+
+									float move_distance =
+										sqrt(
+											move_x * move_x +
+											move_y * move_y
+										);
+
+									if (move_distance >= HEAD_INIT_DISPLACEMENT)
+									{
+										// Determine which body-axis direction agrees
+										// with the initial movement.
+										float direction_dot =
+											move_x * axis_dir.x +
+											move_y * axis_dir.y;
+
+										if (direction_dot < 0.0f)
+										{
+											axis_dir.x =
+												-axis_dir.x;
+
+											axis_dir.y =
+												-axis_dir.y;
+										}
+
+										arena_heading[i] =
+											atan2(
+												axis_dir.y,
+												axis_dir.x
+											);
+
+										arena_heading_initialized[i] =
+											true;
+									}
+								}
+
+
+								// ------------------------------------------------------------
+								// C. After initialization, preserve anatomical head polarity
+								//    using temporal continuity.
+								//
+								//    Translation speed is NOT required here.
+								//    Therefore turning in place can still update heading.
+								// ------------------------------------------------------------
+								else
+								{
+									cv::Point2f old_dir(
+										static_cast<float>(
+											cos(arena_heading[i])
+											),
+										static_cast<float>(
+											sin(arena_heading[i])
+											)
+									);
+
+									// The body-axis calculation has 180-degree ambiguity.
+									// Choose the axis end nearest the previous head direction.
+									float continuity_dot =
+										axis_dir.x * old_dir.x +
+										axis_dir.y * old_dir.y;
+
+									if (continuity_dot < 0.0f)
+									{
+										axis_dir.x =
+											-axis_dir.x;
+
+										axis_dir.y =
+											-axis_dir.y;
+									}
+
+									// Light direction smoothing only.
+									//
+									// There is intentionally NO position smoothing.
+									cv::Point2f smooth_dir(
+										(1.0f - HEAD_DIR_ALPHA) * old_dir.x +
+										HEAD_DIR_ALPHA * axis_dir.x,
+
+										(1.0f - HEAD_DIR_ALPHA) * old_dir.y +
+										HEAD_DIR_ALPHA * axis_dir.y
+									);
+
+									float smooth_norm =
+										sqrt(
+											smooth_dir.x * smooth_dir.x +
+											smooth_dir.y * smooth_dir.y
+										);
+
+									if (smooth_norm > 1e-6f)
+									{
+										arena_heading[i] =
+											atan2(
+												smooth_dir.y,
+												smooth_dir.x
+											);
+									}
+								}
+
+
+								// ------------------------------------------------------------
+								// D. Calculate the adaptive contour-based head target
+								// ------------------------------------------------------------
+
+								// Before head/tail initialization,
+								// safely track the current body centroid.
+								cv::Point2f control_target =
+									arena_pt[i];
+
+								cv::Point2f head_boundary =
+									arena_pt[i];
+
+								bool head_boundary_valid =
+									false;
+
+								if (arena_heading_initialized[i])
+								{
+									cv::Point2f head_dir(
+										static_cast<float>(
+											cos(arena_heading[i])
+											),
+										static_cast<float>(
+											sin(arena_heading[i])
+											)
+									);
+
+									head_boundary_valid =
+										findContourRayIntersection(
+											matched_contour,
+											arena_pt[i],
+											head_dir,
+											head_boundary
+										);
+
+									if (head_boundary_valid)
+									{
+										// Adaptive target:
+										// move from centroid toward the actual contour boundary.
+										//
+										// No fixed pixel offset is used.
+										control_target.x =
+											arena_pt[i].x +
+											HEAD_TARGET_RATIO *
+											(head_boundary.x - arena_pt[i].x);
+
+										control_target.y =
+											arena_pt[i].y +
+											HEAD_TARGET_RATIO *
+											(head_boundary.y - arena_pt[i].y);
+									}
+								}
+
+
+								// Save the current-frame control target.
+								fly_head_target[i] =
+									control_target;
+
+								fly_head_target_valid[i] =
+									true;
+
+								// Blue circle:
+// detected body centroid.
+								cv::circle(
+									arena_frame,
+									arena_pt[i],
+									3,
+									cv::Scalar(255, 0, 0),
+									1
+								);
+
+
+								if (arena_heading_initialized[i])
+								{
+									if (head_boundary_valid)
+									{
+										// Green line:
+										// body-axis ray toward the head.
+										cv::line(
+											arena_frame,
+											arena_pt[i],
+											head_boundary,
+											cv::Scalar(0, 255, 0),
+											1
+										);
+
+										// Magenta circle:
+										// actual contour intersection.
+										cv::circle(
+											arena_frame,
+											head_boundary,
+											2,
+											cv::Scalar(255, 0, 255),
+											1
+										);
+									}
+
+									// Red cross:
+									// actual target sent toward the calibration map.
+									cv::drawMarker(
+										arena_frame,
+										control_target,
+										cv::Scalar(0, 0, 255),
+										cv::MARKER_CROSS,
+										7,
+										1
+									);
+								}
+								else
+								{
+									cv::Point text_position(
+										static_cast<int>(arena_pt[i].x + 5),
+										static_cast<int>(arena_pt[i].y - 5)
+									);
+
+									cv::putText(
+										arena_frame,
+										"HEAD?",
+										text_position,
+										cv::FONT_HERSHEY_SIMPLEX,
+										0.3,
+										cv::Scalar(0, 255, 255),
+										1
+									);
+								}
+
+				
 								arena_ctr_pts.erase(arena_ctr_pts.begin() + j);
 								arena_ctr_sz.erase(arena_ctr_sz.begin() + j);
 								arena_ctr_mu.erase(arena_ctr_mu.begin() + j); 
+								arena_ctr_contours.erase(arena_ctr_contours.begin() + j);
+								
 							}
 						}
 						else if (arena_ctr_pts.size() < NFLIES)
@@ -812,49 +1109,46 @@ int _tmain(int argc, _TCHAR* argv[])
 
 								putText(arena_frame, to_string(arena_pt_ind[j]), arena_pt[arena_pt_ind[j]], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
 
-								arena_pt_prev[arena_pt_ind[j]] = arena_pt[arena_pt_ind[j]];
-
 								last_arena_pt.erase(last_arena_pt.begin() + j);
 								arena_pt_ind.erase(arena_pt_ind.begin() + j);
 							}
 						}
 
-						if (!flyview_track && !manual_track) {
-							cv::Point2f body_center = arena_pt[focal_fly];
+						if (
+							!flyview_track &&
+							!manual_track &&
+							fly_head_target_valid[focal_fly]
+							)
+						{
+							cv::Point2f control_target =
+								fly_head_target[focal_fly];
 
-							// 1. Safety Guard: Ignore uninitialized zero positions
-							if (body_center.x <= 1.0f && body_center.y <= 1.0f) {
-								continue;
+							// Use the current frame's adaptive head target directly.
+							int map_index =
+								findClosestPoint(
+									control_target,
+									raster_pts
+								);
+
+							if (map_index >= 0)
+							{
+								// Yellow tilted cross:
+								// calibration-map sample actually selected.
+								cv::drawMarker(
+									arena_frame,
+									raster_pts[map_index],
+									cv::Scalar(0, 255, 255),
+									cv::MARKER_TILTED_CROSS,
+									7,
+									1
+								);
+
+								ndq.SetGalvoAngles(
+									raster_angles[map_index]
+								);
+
+								ndq.write();
 							}
-
-							double h_angle = arena_heading[focal_fly];
-
-							if (std::isnan(h_angle) || std::isinf(h_angle)) {
-								h_angle = 0.0;
-							}
-
-							// 2. Compute raw target position shifted by FLY_HEAD_OFFSET
-							cv::Point2f raw_head_target;
-							raw_head_target.x = body_center.x + FLY_HEAD_OFFSET * cos(h_angle);
-							raw_head_target.y = body_center.y + FLY_HEAD_OFFSET * sin(h_angle);
-
-							// 3. Target Position Low-Pass Filtering (EMA)
-							if (head_target_smooth[focal_fly].x == 0 && head_target_smooth[focal_fly].y == 0) {
-								head_target_smooth[focal_fly] = raw_head_target;
-							}
-							else {
-								head_target_smooth[focal_fly].x = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].x + ALPHA_POS * raw_head_target.x;
-								head_target_smooth[focal_fly].y = (1.0 - ALPHA_POS) * head_target_smooth[focal_fly].y + ALPHA_POS * raw_head_target.y;
-							}
-
-							// Optional Debug Markers: Draw blue circle for body centroid, red circle for head target
-							cv::circle(arena_frame, body_center, 3, cv::Scalar(255, 0, 0), -1);
-							cv::circle(arena_frame, head_target_smooth[focal_fly], 3, cv::Scalar(0, 0, 255), -1);
-
-							// 4. Find closest calibration grid point and drive galvo
-							int j = findClosestPoint(head_target_smooth[focal_fly], raster_pts);
-							ndq.SetGalvoAngles(raster_angles[j]);
-							ndq.write();
 						}
 					}
 

@@ -25,27 +25,145 @@ float dist(Point2f p1, Point2f p2)
 	return(sqrt(dx*dx + dy*dy));
 }
 
-int findClosestPoint(Point2f pt, vector<Point2f> nbor)
+int findClosestPoint(
+    Point2f pt,
+    const vector<Point2f>& nbor
+)
 {
-	int fly_index = 0;
-	if (nbor.size() == 1)
-		return fly_index;
-	else
-	{
-		float fly_dist = dist(pt, nbor[0]);
+    if (nbor.empty())
+        return -1;
 
-		for (int i = 1; i < nbor.size(); i++)
-		{
-			float res = dist(pt, nbor[i]);
-			if (res < fly_dist)
-			{
-				fly_dist = res;
-				fly_index = i;                //Store the index of nearest point
-			}
-		}
+    int closest_index = 0;
 
-		return fly_index;
-	}
+    float dx = nbor[0].x - pt.x;
+    float dy = nbor[0].y - pt.y;
+
+    float best_dist_sq =
+        dx * dx +
+        dy * dy;
+
+    for (size_t i = 1; i < nbor.size(); i++)
+    {
+        dx = nbor[i].x - pt.x;
+        dy = nbor[i].y - pt.y;
+
+        float dist_sq =
+            dx * dx +
+            dy * dy;
+
+        if (dist_sq < best_dist_sq)
+        {
+            best_dist_sq = dist_sq;
+            closest_index = static_cast<int>(i);
+        }
+    }
+
+    return closest_index;
+}
+
+static float cross2D(
+    const cv::Point2f& a,
+    const cv::Point2f& b
+)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+
+bool findContourRayIntersection(
+    const vector<Point>& contour,
+    Point2f origin,
+    Point2f direction,
+    Point2f& intersection
+)
+{
+    if (contour.size() < 2)
+        return false;
+
+    float direction_norm =
+        sqrt(
+            direction.x * direction.x +
+            direction.y * direction.y
+        );
+
+    if (direction_norm < 1e-6f)
+        return false;
+
+    // Normalize the ray direction.
+    Point2f ray_dir(
+        direction.x / direction_norm,
+        direction.y / direction_norm
+    );
+
+    bool found = false;
+    float nearest_t = 1e9f;
+
+    for (size_t i = 0; i < contour.size(); i++)
+    {
+        size_t next =
+            (i + 1) % contour.size();
+
+        Point2f p1(
+            static_cast<float>(contour[i].x),
+            static_cast<float>(contour[i].y)
+        );
+
+        Point2f p2(
+            static_cast<float>(contour[next].x),
+            static_cast<float>(contour[next].y)
+        );
+
+        Point2f segment(
+            p2.x - p1.x,
+            p2.y - p1.y
+        );
+
+        Point2f relative(
+            p1.x - origin.x,
+            p1.y - origin.y
+        );
+
+        float denominator =
+            cross2D(ray_dir, segment);
+
+        // Ray and contour segment are approximately parallel.
+        if (fabs(denominator) < 1e-6f)
+            continue;
+
+        float t =
+            cross2D(relative, segment) /
+            denominator;
+
+        float u =
+            cross2D(relative, ray_dir) /
+            denominator;
+
+        // t > 0: intersection is in front of the centroid.
+        // 0 <= u <= 1: intersection is on this contour segment.
+        if (
+            t > 0.0f &&
+            u >= 0.0f &&
+            u <= 1.0f &&
+            t < nearest_t
+            )
+        {
+            nearest_t = t;
+            found = true;
+        }
+    }
+
+    if (!found)
+        return false;
+
+    intersection.x =
+        origin.x +
+        nearest_t * ray_dir.x;
+
+    intersection.y =
+        origin.y +
+        nearest_t * ray_dir.y;
+
+    return true;
 }
 
 int ConvertTimeToFPS(int ctime, int ltime)
