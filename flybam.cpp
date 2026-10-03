@@ -703,11 +703,25 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			Image img;
 			int arena_last = 0, arena_fps = 0;
+			bool head_flip_key_was_down = false;
+			unsigned int head_flip_count = 0;
 
 			while (true)
 			{
 				if (aq.try_pop(img))
 				{
+					const bool head_flip_key_down =
+						(GetAsyncKeyState(VK_OEM_5) & 0x8000) != 0;
+
+					// A value of -1 means no reversal was requested in this frame.
+					const int head_flip_fly =
+						(head_flip_key_down && !head_flip_key_was_down)
+						? focal_fly
+						: -1;
+
+					head_flip_key_was_down = head_flip_key_down;
+
+
 					vector<Point2f> fly_pt(NFLIES);
 					vector<double> fly_sz(NFLIES);
 
@@ -955,6 +969,22 @@ int _tmain(int argc, _TCHAR* argv[])
 									}
 								}
 
+								if (
+									i == head_flip_fly &&
+									arena_heading_initialized[i]
+									)
+								{
+									const double previous_heading = arena_heading[i];
+
+									// Reverse the directed axis by 180 degrees.
+									// atan2 keeps the result in the usual wrapped angle range.
+									arena_heading[i] = atan2(
+										-sin(previous_heading),
+										-cos(previous_heading)
+									);
+
+									++head_flip_count;
+								}
 
 								// ------------------------------------------------------------
 								// D. Calculate the adaptive contour-based head target
@@ -1081,6 +1111,9 @@ int _tmain(int argc, _TCHAR* argv[])
 									);
 								}
 
+								//fly ID text
+								//putText(arena_frame, to_string(i), arena_pt[i], FONT_HERSHEY_COMPLEX, 0.2, Scalar(255, 255, 255));
+
 				
 								arena_ctr_pts.erase(arena_ctr_pts.begin() + j);
 								arena_ctr_sz.erase(arena_ctr_sz.begin() + j);
@@ -1151,6 +1184,17 @@ int _tmain(int argc, _TCHAR* argv[])
 							}
 						}
 					}
+
+					// Confirms that a reversal was actually applied.
+					cv::putText(
+						arena_frame,
+						"Head flips: " + std::to_string(head_flip_count),
+						cv::Point(10, 60),
+						cv::FONT_HERSHEY_SIMPLEX,
+						0.4,
+						cv::Scalar(255, 255, 255),
+						1
+					);
 
 					putText(arena_frame, to_string(arena_fps), Point((arena_image_width - 50), 10), FONT_HERSHEY_COMPLEX, 0.4, Scalar(255, 255, 255));
 					putText(arena_frame, to_string(aq.unsafe_size()), Point((arena_image_width - 50), 20), FONT_HERSHEY_COMPLEX, 0.4, Scalar(255, 255, 255));
