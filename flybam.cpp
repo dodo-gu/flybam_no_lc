@@ -3,7 +3,7 @@
 
 #include "stdafx.h"
 #include "readerwriterqueue.h"
-
+#include <atomic>
 
 
 using namespace std;
@@ -16,6 +16,7 @@ bool stream = true;
 
 bool flyview_track = false;
 bool manual_track = false;
+std::atomic<bool> arena_head_target_enabled(true);
 //bool z_track = false;
 
 bool flyview_record = false;
@@ -721,6 +722,9 @@ int _tmain(int argc, _TCHAR* argv[])
 
 					head_flip_key_was_down = head_flip_key_down;
 
+					const bool use_contour_head_target =
+						arena_head_target_enabled.load();
+
 
 					vector<Point2f> fly_pt(NFLIES);
 					vector<double> fly_sz(NFLIES);
@@ -1039,7 +1043,12 @@ int _tmain(int argc, _TCHAR* argv[])
 								}
 
 
-								// Save the current-frame control target.
+								if (!use_contour_head_target)
+								{
+									control_target = arena_pt[i];
+								}
+
+								// Save the actual current-frame control target.
 								fly_head_target[i] =
 									control_target;
 
@@ -1047,7 +1056,6 @@ int _tmain(int argc, _TCHAR* argv[])
 									true;
 
 								// Blue circle:
-// detected body centroid.
 								cv::circle(
 									arena_frame,
 									arena_pt[i],
@@ -1057,7 +1065,8 @@ int _tmain(int argc, _TCHAR* argv[])
 								);
 
 
-								if (arena_heading_initialized[i])
+								if (arena_heading_initialized[i] ||
+									!use_contour_head_target)
 								{
 									if (head_boundary_valid)
 									{
@@ -1185,6 +1194,27 @@ int _tmain(int argc, _TCHAR* argv[])
 						}
 					}
 
+					std::string arena_mode_text =
+						use_contour_head_target
+						? "ARENA: HEAD [F8]"
+						: "ARENA: CENTROID [F8]";
+
+					// The preference is retained, but it does not override
+					// manual control or fly-view tracking.
+					if (manual_track || flyview_track)
+					{
+						arena_mode_text += " (inactive)";
+					}
+
+					cv::putText(
+						arena_frame,
+						arena_mode_text,
+						cv::Point(10, 40),
+						cv::FONT_HERSHEY_SIMPLEX,
+						0.45,
+						cv::Scalar(255, 255, 255),
+						1
+					);
 					// Confirms that a reversal was actually applied.
 					cv::putText(
 						arena_frame,
@@ -1450,6 +1480,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			int record_key_state = 0;
 			int track_key_state = 0;
 			int flash_key_state = 0;
+			int head_target_key_state = 0;
 			int bg_key_state = 0;
 			int fly_key_state = 0;
 			int z_base_key_state = 0;
@@ -1758,6 +1789,26 @@ int _tmain(int argc, _TCHAR* argv[])
 				//}
 				//else
 				//	z_track_key_state = 0;
+
+				// F8:  HEAD <-> CENTROID
+
+				if ((GetAsyncKeyState(VK_F8) & 0x8000) != 0)
+				{
+					if (!head_target_key_state)
+					{
+						// This keyboard worker is the only writer.
+						const bool previous_mode =
+							arena_head_target_enabled.load();
+
+						arena_head_target_enabled.store(!previous_mode);
+					}
+
+					head_target_key_state = 1;
+				}
+				else
+				{
+					head_target_key_state = 0;
+				}
 
 				if (GetAsyncKeyState(VK_ESCAPE))
 				{
