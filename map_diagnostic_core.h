@@ -20,7 +20,7 @@ static const char* const SOURCE_COMMIT =
     "25cff36faf80ed1d2aec6db83ae58cabca4f2a84";
 
 // Tune these before rebuilding; do not change steps halfway through a session.
-static const double SHIFT_STEP_PX = 0.25;
+static const double SHIFT_STEP_PX = 1;
 static const double SCALE_FACTOR_PER_PRESS = 1.001;
 static const double MAX_ABS_SHIFT_PX = 20.0;
 static const double MIN_SCALE = 0.90;
