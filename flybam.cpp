@@ -4,6 +4,12 @@
 #include "stdafx.h"
 #include "readerwriterqueue.h"
 #include <atomic>
+// Temporary diagnostic only.
+#define FLYBAM_MAP_DIAGNOSTIC 1
+
+#if FLYBAM_MAP_DIAGNOSTIC
+#include "map_diagnostic.h"
+#endif
 
 
 using namespace std;
@@ -274,6 +280,16 @@ int _tmain(int argc, _TCHAR* argv[])
 			raster_angles.push_back(raster_ang);
 		}
 	}
+
+	#if FLYBAM_MAP_DIAGNOSTIC
+		flybam_mapdiag::MapDiagnostic map_diag(
+			"..\\ccf\\map.txt",
+			raster_pts,
+			raster_angles,
+			arena_image_width,
+			arena_image_height
+		);
+	#endif
 
 	FVFmfWriter fvfout;
 	AVFmfWriter avfout;
@@ -724,6 +740,16 @@ int _tmain(int argc, _TCHAR* argv[])
 
 					const bool use_contour_head_target =
 						arena_head_target_enabled.load();
+					#if FLYBAM_MAP_DIAGNOSTIC
+					const flybam_mapdiag::ViewPtr map_diag_view =
+						map_diag.snapshot();
+
+					const std::vector<cv::Point2f>& active_raster_pts =
+						map_diag_view->points;
+					#else
+					const std::vector<cv::Point2f>& active_raster_pts =
+						raster_pts;
+					#endif
 
 
 					vector<Point2f> fly_pt(NFLIES);
@@ -1169,7 +1195,7 @@ int _tmain(int argc, _TCHAR* argv[])
 							int map_index =
 								findClosestPoint(
 									control_target,
-									raster_pts
+									active_raster_pts
 								);
 
 							if (map_index >= 0)
@@ -1178,7 +1204,7 @@ int _tmain(int argc, _TCHAR* argv[])
 								// calibration-map sample actually selected.
 								cv::drawMarker(
 									arena_frame,
-									raster_pts[map_index],
+									active_raster_pts[map_index],
 									cv::Scalar(0, 255, 255),
 									cv::MARKER_TILTED_CROSS,
 									7,
@@ -1193,6 +1219,13 @@ int _tmain(int argc, _TCHAR* argv[])
 							}
 						}
 					}
+
+					#if FLYBAM_MAP_DIAGNOSTIC
+					map_diag.drawOverlay(
+						arena_frame,
+						map_diag_view
+					);
+					#endif
 
 					std::string arena_mode_text =
 						use_contour_head_target
@@ -1809,6 +1842,13 @@ int _tmain(int argc, _TCHAR* argv[])
 				{
 					head_target_key_state = 0;
 				}
+
+				#if FLYBAM_MAP_DIAGNOSTIC
+				map_diag.keyboardTick(
+					!manual_track && !flyview_track,
+					arena_head_target_enabled.load()
+				);
+				#endif
 
 				if (GetAsyncKeyState(VK_ESCAPE))
 				{
