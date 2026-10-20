@@ -4,7 +4,7 @@
 #include "stdafx.h"
 #include "readerwriterqueue.h"
 #include <atomic>
-
+#include <cmath>
 
 using namespace std;
 using namespace FlyCapture2;
@@ -704,6 +704,8 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			Image img;
 			int arena_last = 0, arena_fps = 0;
+			int previous_arena_map_index = -1;
+			const float MAP_SWITCH_MARGIN_PX = 0.35f;
 			bool head_flip_key_was_down = false;
 			unsigned int head_flip_count = 0;
 
@@ -1166,11 +1168,50 @@ int _tmain(int argc, _TCHAR* argv[])
 								fly_head_target[focal_fly];
 
 							// Use the current frame's adaptive head target directly.
-							int map_index =
-								findClosestPoint(
+							int map_index = -1;
+
+							if (
+								std::isfinite(control_target.x) &&
+								std::isfinite(control_target.y)
+								)
+							{
+								map_index = findClosestPoint(
 									control_target,
 									raster_pts
 								);
+							}
+
+							// Retain the previous map point when switching would provide
+							// only a small improvement in arena-image distance.
+							if (
+								MAP_SWITCH_MARGIN_PX > 0.0f &&
+								map_index >= 0 &&
+								previous_arena_map_index >= 0 &&
+								previous_arena_map_index <
+								static_cast<int>(raster_pts.size()) &&
+								map_index != previous_arena_map_index
+								)
+							{
+								const cv::Point2f new_error =
+									control_target - raster_pts[map_index];
+
+								const cv::Point2f previous_error =
+									control_target - raster_pts[previous_arena_map_index];
+
+								const float new_distance =
+									std::sqrt(new_error.dot(new_error));
+
+								const float previous_distance =
+									std::sqrt(previous_error.dot(previous_error));
+
+								if (
+									previous_distance <=
+									new_distance + MAP_SWITCH_MARGIN_PX
+									)
+								{
+									map_index = previous_arena_map_index;
+								}
+							}
 
 							if (map_index >= 0)
 							{
@@ -1190,8 +1231,19 @@ int _tmain(int argc, _TCHAR* argv[])
 								);
 
 								ndq.write();
+
+								previous_arena_map_index = map_index;
 							}
 						}
+					}
+
+					if (
+						manual_track ||
+						flyview_track ||
+						!fly_head_target_valid[focal_fly]
+						)
+					{
+						previous_arena_map_index = -1;
 					}
 
 					std::string arena_mode_text =
