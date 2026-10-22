@@ -5,6 +5,7 @@
 #include "readerwriterqueue.h"
 #include <atomic>
 #include <cmath>
+#include "manual_map_samples.h"
 
 using namespace std;
 using namespace FlyCapture2;
@@ -14,8 +15,8 @@ using namespace concurrency;
 
 bool stream = true;
 
-bool flyview_track = false;
-bool manual_track = false;
+std::atomic<bool> flyview_track(false);
+std::atomic<bool> manual_track(false);
 std::atomic<bool> arena_head_target_enabled(true);
 //bool z_track = false;
 
@@ -84,6 +85,7 @@ static void AcqCallback(SapXferCallbackInfo *pInfo)
 	
 	sq.push(stamp);
 	q.push(frame);
+	manual_map::counters().fly_in.fetch_add(1);
 	
 	//if ((++z_count % Z_PERIOD) == 0)
 	//{
@@ -99,6 +101,8 @@ void OnImageGrabbed(Image* pImage, const void* pCallbackData)
 	img.DeepCopy(pImage);
 	
 	aq.push(img);
+
+	manual_map::counters().arena_in.fetch_add(1);
 	
 	return;
 }
@@ -258,7 +262,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	PGRGuid guid;
 	FlyCapture2::Error error;
 
-	fstream map("..\\ccf\\map.txt", ios_base::in);
+	const char* const MAP_SOURCE_PATH = "..\\ccf\\map.txt";
+	fstream map(MAP_SOURCE_PATH, ios_base::in);
 
 	vector<Point2f> raster_pts;
 	vector<Point2f> raster_angles;
@@ -274,6 +279,11 @@ int _tmain(int argc, _TCHAR* argv[])
 			raster_angles.push_back(raster_ang);
 		}
 	}
+
+	manual_map::Recorder calibration(
+		MAP_SOURCE_PATH, raster_pts, raster_angles
+	);
+	manual_map::Mutex calibration_galvo_mutex;
 
 	FVFmfWriter fvfout;
 	AVFmfWriter avfout;
@@ -395,6 +405,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 				if (q.try_pop(tframe))
 				{
+					manual_map::counters().fly_out.fetch_add(1);
 					sq.try_pop(fly_now);
 
 					int duration = fly_now - fly_last;
@@ -405,6 +416,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 						fly_frame = tframe.clone();
 						fly_img = tframe.clone();
+						calibration.publishFly(fly_img, fly_now);
 
 						fly_last = fly_now;
 
@@ -713,6 +725,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			{
 				if (aq.try_pop(img))
 				{
+					manual_map::counters().arena_out.fetch_add(1);
 					const bool head_flip_key_down =
 						(GetAsyncKeyState(VK_OEM_5) & 0x8000) != 0;
 
@@ -742,7 +755,8 @@ int _tmain(int argc, _TCHAR* argv[])
 						NFLIES,
 						false
 					);
-					
+					vector<bool> calibration_head_ok(NFLIES, false);
+
 					arena_fps = ConvertTimeToFPS(img.GetTimeStamp().cycleCount, arena_last);
 					arena_last = img.GetTimeStamp().cycleCount;
 
@@ -1044,6 +1058,8 @@ int _tmain(int argc, _TCHAR* argv[])
 									}
 								}
 
+								calibration_head_ok[i] =
+									arena_heading_initialized[i] && head_boundary_valid;
 
 								if (!use_contour_head_target)
 								{
@@ -1226,13 +1242,19 @@ int _tmain(int argc, _TCHAR* argv[])
 									1
 								);
 
-								ndq.SetGalvoAngles(
-									raster_angles[map_index]
-								);
+								{
+									manual_map::Guard command_lock(calibration_galvo_mutex);
 
-								ndq.write();
-
-								previous_arena_map_index = map_index;
+									// Recheck under the same lock used by manual arrow control.
+									// An automatic update that was already in flight must not
+									// overwrite a newer manual command.
+									if (!manual_track.load() && !flyview_track.load())
+									{
+										ndq.SetGalvoAngles(raster_angles[map_index]);
+										ndq.write();
+										previous_arena_map_index = map_index;
+									}
+								}
 							}
 						}
 					}
@@ -1245,6 +1267,18 @@ int _tmain(int argc, _TCHAR* argv[])
 					{
 						previous_arena_map_index = -1;
 					}
+
+					calibration.publishArena(
+						arena_img,
+						fly_head_target_valid[focal_fly] && calibration_head_ok[focal_fly],
+						use_contour_head_target,
+						focal_fly,
+						fly_pt[focal_fly],
+						fly_head_target[focal_fly],
+						arena_heading[focal_fly],
+						head_flip_count,
+						static_cast<int>(img.GetTimeStamp().cycleCount)
+					);
 
 					std::string arena_mode_text =
 						use_contour_head_target
@@ -1372,6 +1406,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				//		fvfout.Close();
 				//		//printf("[OK]\n");
 				//	}
+
 
 				//}
 
@@ -1530,6 +1565,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		#pragma omp section
 		{
 			int record_key_state = 0;
+			bool calibration_a_was_down = false;
 			int track_key_state = 0;
 			int flash_key_state = 0;
 			int head_target_key_state = 0;
@@ -1709,63 +1745,69 @@ int _tmain(int argc, _TCHAR* argv[])
 				else
 					fly_key_state = 0;
 
-				SHORT leftKeyState = GetAsyncKeyState(VK_LEFT);
+				const bool left_down = manual_map::keyDown(VK_LEFT);
+				const bool right_down = manual_map::keyDown(VK_RIGHT);
+				const bool up_down = manual_map::keyDown(VK_UP);
+				const bool down_down = manual_map::keyDown(VK_DOWN);
+				const bool arrows_down = left_down || right_down || up_down || down_down;
 
-				if ((1 << 15) & leftKeyState)
+				if (arrows_down)
 				{
+					manual_map::Guard command_lock(calibration_galvo_mutex);
 					flyview_track = false;
-					//z_track = false;
 					manual_track = true;
-					ndq.MoveLeft();
-					ndq.write();
+
+					// Same Move... functions, directions and step size as before.
+					if (left_down) { ndq.MoveLeft();  ndq.write(); }
+					if (right_down) { ndq.MoveRight(); ndq.write(); }
+					if (up_down) { ndq.MoveUp();    ndq.write(); }
+					if (down_down) { ndq.MoveDown();  ndq.write(); }
+
+					calibration.noteManualMove();
 				}
 
-				SHORT rightKeyState = GetAsyncKeyState(VK_RIGHT);
-
-				if ((1 << 15) & rightKeyState)
+				const bool a_down = manual_map::keyDown('A');
+				if (a_down && !calibration_a_was_down)
 				{
-					flyview_track = false;
-					//z_track = false;
-					manual_track = true;
-					ndq.MoveRight();
-					ndq.write();
+					const bool modifiers =
+						manual_map::keyDown(VK_CONTROL) ||
+						manual_map::keyDown(VK_MENU) ||
+						manual_map::keyDown(VK_SHIFT);
+
+					if (manual_map::ownsForeground() && !modifiers)
+					{
+						if (arrows_down || !manual_track.load() || flyview_track.load())
+						{
+							std::printf("[MANUAL MAP] Use arrows to center, release them, then press A.\n");
+						}
+						else if (!arena_head_target_enabled.load())
+						{
+							std::printf("[MANUAL MAP] Select HEAD with F8 before recording.\n");
+						}
+						else
+						{
+							cv::Point2f centered_angles;
+							{
+								manual_map::Guard command_lock(calibration_galvo_mutex);
+								centered_angles = ndq.GetGalvoAngles();
+							}
+							// Disk I/O is not done inside the command lock or camera workers.
+							calibration.save(centered_angles);
+						}
+					}
 				}
+				calibration_a_was_down = a_down;
 
-				SHORT upKeyState = GetAsyncKeyState(VK_UP);
-
-				if ((1 << 15) & upKeyState)
-				{
-					flyview_track = false;
-					//z_track = false;
-					manual_track = true;
-					ndq.MoveUp();
-					ndq.write();
-				}
-
-				SHORT downKeyState = GetAsyncKeyState(VK_DOWN);
-
-				if ((1 << 15) & downKeyState)
-				{
-					flyview_track = false;
-					//z_track = false;
-					manual_track = true;
-					ndq.MoveDown();
-					ndq.write();
-				}
-
-				if (GetAsyncKeyState(VK_F1))
+				if (manual_map::keyDown(VK_F1))
 				{
 					if (!track_key_state)
-					{
-						flyview_track = !flyview_track;
-
-						manual_track = false;
-					}
-
+						std::printf("[MANUAL MAP] F1 bead tracking is disabled in this calibration build.\n");
 					track_key_state = 1;
 				}
 				else
+				{
 					track_key_state = 0;
+				}
 
 				if (GetAsyncKeyState(VK_F2))
 				{
@@ -1902,11 +1944,13 @@ int _tmain(int argc, _TCHAR* argv[])
 				{
 					if (!reset_galvo_state)
 					{
+						manual_map::Guard command_lock(calibration_galvo_mutex);
 						flyview_track = false;
 						//z_track = false;
 						manual_track = true;
 						ndq.reset();
 						ndq.write();
+						calibration.noteManualMove();
 					}
 
 					reset_galvo_state = 1;
